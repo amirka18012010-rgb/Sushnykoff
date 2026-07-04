@@ -1,5 +1,5 @@
 // ============================================================
-// SERVER.JS С better-sqlite3 (синхронный, работает на Render)
+// ПОЛНЫЙ SERVER.JS С better-sqlite3 (ВСЕ МАРШРУТЫ)
 // ============================================================
 require('dotenv').config();
 const express = require('express');
@@ -154,8 +154,7 @@ const upload = multer({ storage });
 function isAdmin(req) { return req.session && req.session.isAdmin; }
 function isAuthenticated(req) { return req.session && req.session.userId; }
 function isBlocked(userId) {
-  const stmt = db.prepare('SELECT is_blocked FROM users WHERE id = ?');
-  const row = stmt.get(userId);
+  const row = db.prepare('SELECT is_blocked FROM users WHERE id = ?').get(userId);
   return row ? row.is_blocked : 0;
 }
 
@@ -165,150 +164,213 @@ function isBlocked(userId) {
 
 // ---- Категории (публичные) ----
 app.get('/api/categories', (req, res) => {
-  const stmt = db.prepare('SELECT * FROM categories ORDER BY name');
-  res.json(stmt.all());
+  try {
+    const rows = db.prepare('SELECT * FROM categories ORDER BY name').all();
+    res.json(rows);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // ---- Товары (фильтр, поиск, пагинация) ----
 app.get('/api/products', (req, res) => {
-  const { category, search, page = 1, limit = 12 } = req.query;
-  let sql = 'SELECT p.*, c.name as category_name FROM products p JOIN categories c ON p.category_id = c.id';
-  const params = [];
-  const conditions = [];
-  if (category && category !== 'all') {
-    conditions.push('c.id = ?');
-    params.push(category);
+  try {
+    const { category, search, page = 1, limit = 12 } = req.query;
+    let sql = 'SELECT p.*, c.name as category_name FROM products p JOIN categories c ON p.category_id = c.id';
+    const params = [];
+    const conditions = [];
+    if (category && category !== 'all') {
+      conditions.push('c.id = ?');
+      params.push(category);
+    }
+    if (search && search.trim() !== '') {
+      const words = search.trim().split(/\s+/).filter(w => w.length > 0);
+      words.forEach(word => {
+        conditions.push('(p.name LIKE ? COLLATE NOCASE OR p.description LIKE ? COLLATE NOCASE)');
+        params.push('%' + word + '%', '%' + word + '%');
+      });
+    }
+    if (conditions.length) sql += ' WHERE ' + conditions.join(' AND ');
+    const countStmt = db.prepare('SELECT COUNT(*) as total FROM products p JOIN categories c ON p.category_id = c.id' + (conditions.length ? ' WHERE ' + conditions.join(' AND ') : ''));
+    const totalRow = countStmt.get(...params);
+    const total = totalRow.total;
+    const offset = (page - 1) * limit;
+    sql += ' ORDER BY p.id DESC LIMIT ? OFFSET ?';
+    const dataStmt = db.prepare(sql);
+    const rows = dataStmt.all(...params, limit, offset);
+    res.json({ items: rows, total, page: parseInt(page), totalPages: Math.ceil(total / limit) });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
   }
-  if (search && search.trim() !== '') {
-    const words = search.trim().split(/\s+/).filter(w => w.length > 0);
-    words.forEach(word => {
-      conditions.push('(p.name LIKE ? COLLATE NOCASE OR p.description LIKE ? COLLATE NOCASE)');
-      params.push('%' + word + '%', '%' + word + '%');
-    });
-  }
-  if (conditions.length) sql += ' WHERE ' + conditions.join(' AND ');
-  const countStmt = db.prepare('SELECT COUNT(*) as total FROM products p JOIN categories c ON p.category_id = c.id' + (conditions.length ? ' WHERE ' + conditions.join(' AND ') : ''));
-  const totalRow = countStmt.get(...params);
-  const total = totalRow.total;
-  const offset = (page - 1) * limit;
-  sql += ' ORDER BY p.id DESC LIMIT ? OFFSET ?';
-  const dataStmt = db.prepare(sql);
-  const rows = dataStmt.all(...params, limit, offset);
-  res.json({ items: rows, total, page: parseInt(page), totalPages: Math.ceil(total / limit) });
 });
 
 // ---- Один товар ----
 app.get('/api/products/:id', (req, res) => {
-  const stmt = db.prepare('SELECT p.*, c.name as category_name FROM products p JOIN categories c ON p.category_id = c.id WHERE p.id = ?');
-  const row = stmt.get(req.params.id);
-  if (!row) return res.status(404).json({ error: 'Товар не найден' });
-  res.json(row);
+  try {
+    const row = db.prepare('SELECT p.*, c.name as category_name FROM products p JOIN categories c ON p.category_id = c.id WHERE p.id = ?').get(req.params.id);
+    if (!row) return res.status(404).json({ error: 'Товар не найден' });
+    res.json(row);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // ---- Отзывы ----
 app.get('/api/products/:id/reviews', (req, res) => {
-  const stmt = db.prepare('SELECT * FROM reviews WHERE product_id = ? ORDER BY created_at DESC');
-  res.json(stmt.all(req.params.id));
+  try {
+    const rows = db.prepare('SELECT * FROM reviews WHERE product_id = ? ORDER BY created_at DESC').all(req.params.id);
+    res.json(rows);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
+
 app.post('/api/products/:id/reviews', (req, res) => {
-  const { user_name, rating, comment } = req.body;
-  if (!user_name || !rating || rating < 1 || rating > 5) {
-    return res.status(400).json({ error: 'Заполните имя и рейтинг' });
+  try {
+    const { user_name, rating, comment } = req.body;
+    if (!user_name || !rating || rating < 1 || rating > 5) {
+      return res.status(400).json({ error: 'Заполните имя и рейтинг' });
+    }
+    const info = db.prepare('INSERT INTO reviews (product_id, user_name, rating, comment) VALUES (?, ?, ?, ?)')
+      .run(req.params.id, user_name, rating, comment || '');
+    const avgRow = db.prepare('SELECT AVG(rating) as avg FROM reviews WHERE product_id = ?').get(req.params.id);
+    if (avgRow && avgRow.avg !== null) {
+      db.prepare('UPDATE products SET avg_rating = ? WHERE id = ?').run(avgRow.avg, req.params.id);
+    }
+    res.json({ id: info.lastInsertRowid });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
   }
-  const insertStmt = db.prepare('INSERT INTO reviews (product_id, user_name, rating, comment) VALUES (?, ?, ?, ?)');
-  const info = insertStmt.run(req.params.id, user_name, rating, comment || '');
-  const avgStmt = db.prepare('SELECT AVG(rating) as avg FROM reviews WHERE product_id = ?');
-  const avgRow = avgStmt.get(req.params.id);
-  if (avgRow && avgRow.avg !== null) {
-    db.prepare('UPDATE products SET avg_rating = ? WHERE id = ?').run(avgRow.avg, req.params.id);
-  }
-  res.json({ id: info.lastInsertRowid });
 });
 
 // ---- Избранное ----
 app.get('/api/favorites', (req, res) => {
   if (!isAuthenticated(req)) return res.status(401).json({ error: 'Необходимо войти' });
-  const stmt = db.prepare('SELECT product_id FROM favorites WHERE user_id = ?');
-  res.json(stmt.all(req.session.userId).map(r => r.product_id));
+  try {
+    const rows = db.prepare('SELECT product_id FROM favorites WHERE user_id = ?').all(req.session.userId);
+    res.json(rows.map(r => r.product_id));
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
+
 app.post('/api/favorites', (req, res) => {
   if (!isAuthenticated(req)) return res.status(401).json({ error: 'Необходимо войти' });
   const { productId } = req.body;
   if (!productId) return res.status(400).json({ error: 'Не указан товар' });
-  db.prepare('INSERT OR IGNORE INTO favorites (user_id, product_id) VALUES (?, ?)').run(req.session.userId, productId);
-  res.json({ success: true });
+  try {
+    db.prepare('INSERT OR IGNORE INTO favorites (user_id, product_id) VALUES (?, ?)').run(req.session.userId, productId);
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
+
 app.delete('/api/favorites/:productId', (req, res) => {
   if (!isAuthenticated(req)) return res.status(401).json({ error: 'Необходимо войти' });
-  db.prepare('DELETE FROM favorites WHERE user_id = ? AND product_id = ?').run(req.session.userId, req.params.productId);
-  res.json({ success: true });
+  try {
+    db.prepare('DELETE FROM favorites WHERE user_id = ? AND product_id = ?').run(req.session.userId, req.params.productId);
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // ---- Новости ----
 app.get('/api/news/latest', (req, res) => {
-  const stmt = db.prepare('SELECT * FROM news WHERE is_active = 1 ORDER BY created_at DESC LIMIT 3');
-  res.json(stmt.all());
+  try {
+    const rows = db.prepare('SELECT * FROM news WHERE is_active = 1 ORDER BY created_at DESC LIMIT 3').all();
+    res.json(rows);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // ---- Настройки ----
 app.get('/api/settings', (req, res) => {
-  const rows = db.prepare('SELECT key, value FROM settings').all();
-  const settings = {};
-  rows.forEach(row => settings[row.key] = row.value);
-  res.json(settings);
+  try {
+    const rows = db.prepare('SELECT key, value FROM settings').all();
+    const settings = {};
+    rows.forEach(row => settings[row.key] = row.value);
+    res.json(settings);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // ---- Уведомления ----
 app.get('/api/notifications', (req, res) => {
-  const stmt = db.prepare('SELECT * FROM notifications WHERE is_read = 0 ORDER BY created_at DESC');
-  res.json(stmt.all());
+  try {
+    const rows = db.prepare('SELECT * FROM notifications WHERE is_read = 0 ORDER BY created_at DESC').all();
+    res.json(rows);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
+
 app.post('/api/notifications/read', (req, res) => {
-  db.prepare('UPDATE notifications SET is_read = 1').run();
-  res.json({ success: true });
+  try {
+    db.prepare('UPDATE notifications SET is_read = 1').run();
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // ---- Фон ----
 app.get('/api/background', (req, res) => {
-  const row = db.prepare('SELECT value FROM settings WHERE key = ?').get('site_background');
-  res.json({ background: row ? row.value : '' });
+  try {
+    const row = db.prepare('SELECT value FROM settings WHERE key = ?').get('site_background');
+    res.json({ background: row ? row.value : '' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // ---- Аутентификация ----
 app.post('/api/auth/register', async (req, res) => {
-  const { firstName, lastName, login, password } = req.body;
-  if (!firstName || !lastName || !login || !password) {
-    return res.status(400).json({ error: 'Заполните все поля' });
-  }
-  const check = db.prepare('SELECT id FROM users WHERE login = ?').get(login);
-  if (check) return res.status(400).json({ error: 'Логин уже занят' });
   try {
+    const { firstName, lastName, login, password } = req.body;
+    if (!firstName || !lastName || !login || !password) {
+      return res.status(400).json({ error: 'Заполните все поля' });
+    }
+    const check = db.prepare('SELECT id FROM users WHERE login = ?').get(login);
+    if (check) return res.status(400).json({ error: 'Логин уже занят' });
     const hashed = await bcrypt.hash(password, 10);
-    const info = db.prepare('INSERT INTO users (first_name, last_name, login, password) VALUES (?, ?, ?, ?)').run(firstName, lastName, login, hashed);
+    const info = db.prepare('INSERT INTO users (first_name, last_name, login, password) VALUES (?, ?, ?, ?)')
+      .run(firstName, lastName, login, hashed);
     req.session.userId = info.lastInsertRowid;
     res.json({ success: true, userId: info.lastInsertRowid });
   } catch (err) {
-    res.status(500).json({ error: 'Ошибка хеширования пароля' });
+    res.status(500).json({ error: 'Ошибка регистрации' });
   }
 });
 
 app.post('/api/auth/login', async (req, res) => {
-  const { login, password } = req.body;
-  if (!login || !password) return res.status(400).json({ error: 'Введите логин и пароль' });
-  const user = db.prepare('SELECT * FROM users WHERE login = ?').get(login);
-  if (!user) return res.status(401).json({ error: 'Неверный логин или пароль' });
-  if (user.is_blocked) return res.status(403).json({ error: 'Ваш аккаунт заблокирован' });
-  const match = await bcrypt.compare(password, user.password);
-  if (!match) return res.status(401).json({ error: 'Неверный логин или пароль' });
-  req.session.userId = user.id;
-  res.json({ success: true, userId: user.id, firstName: user.first_name, lastName: user.last_name });
+  try {
+    const { login, password } = req.body;
+    if (!login || !password) return res.status(400).json({ error: 'Введите логин и пароль' });
+    const user = db.prepare('SELECT * FROM users WHERE login = ?').get(login);
+    if (!user) return res.status(401).json({ error: 'Неверный логин или пароль' });
+    if (user.is_blocked) return res.status(403).json({ error: 'Ваш аккаунт заблокирован' });
+    const match = await bcrypt.compare(password, user.password);
+    if (!match) return res.status(401).json({ error: 'Неверный логин или пароль' });
+    req.session.userId = user.id;
+    res.json({ success: true, userId: user.id, firstName: user.first_name, lastName: user.last_name });
+  } catch (err) {
+    res.status(500).json({ error: 'Ошибка входа' });
+  }
 });
 
 app.get('/api/auth/me', (req, res) => {
-  if (!isAuthenticated(req)) return res.json({ user: null });
-  const user = db.prepare('SELECT id, first_name, last_name, login FROM users WHERE id = ?').get(req.session.userId);
-  if (!user) { req.session.destroy(); return res.json({ user: null }); }
-  res.json({ user });
+  try {
+    if (!isAuthenticated(req)) return res.json({ user: null });
+    const user = db.prepare('SELECT id, first_name, last_name, login FROM users WHERE id = ?').get(req.session.userId);
+    if (!user) { req.session.destroy(); return res.json({ user: null }); }
+    res.json({ user });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 app.post('/api/auth/logout', (req, res) => {
@@ -317,99 +379,137 @@ app.post('/api/auth/logout', (req, res) => {
 });
 
 app.post('/api/auth/recover-login', (req, res) => {
-  const { firstName, lastName } = req.body;
-  if (!firstName || !lastName) return res.status(400).json({ error: 'Введите имя и фамилию' });
-  const row = db.prepare('SELECT login FROM users WHERE first_name = ? AND last_name = ?').get(firstName, lastName);
-  if (!row) return res.status(404).json({ error: 'Пользователь не найден' });
-  res.json({ login: row.login });
+  try {
+    const { firstName, lastName } = req.body;
+    if (!firstName || !lastName) return res.status(400).json({ error: 'Введите имя и фамилию' });
+    const row = db.prepare('SELECT login FROM users WHERE first_name = ? AND last_name = ?').get(firstName, lastName);
+    if (!row) return res.status(404).json({ error: 'Пользователь не найден' });
+    res.json({ login: row.login });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 app.post('/api/auth/reset-password', async (req, res) => {
-  const { firstName, lastName, login, newPassword } = req.body;
-  if (!firstName || !lastName || !login || !newPassword) return res.status(400).json({ error: 'Заполните все поля' });
-  const user = db.prepare('SELECT id FROM users WHERE first_name = ? AND last_name = ? AND login = ?').get(firstName, lastName, login);
-  if (!user) return res.status(404).json({ error: 'Пользователь не найден' });
-  const hashed = await bcrypt.hash(newPassword, 10);
-  db.prepare('UPDATE users SET password = ? WHERE id = ?').run(hashed, user.id);
-  res.json({ success: true });
+  try {
+    const { firstName, lastName, login, newPassword } = req.body;
+    if (!firstName || !lastName || !login || !newPassword) return res.status(400).json({ error: 'Заполните все поля' });
+    const user = db.prepare('SELECT id FROM users WHERE first_name = ? AND last_name = ? AND login = ?').get(firstName, lastName, login);
+    if (!user) return res.status(404).json({ error: 'Пользователь не найден' });
+    const hashed = await bcrypt.hash(newPassword, 10);
+    db.prepare('UPDATE users SET password = ? WHERE id = ?').run(hashed, user.id);
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // ---- Корзина ----
 app.get('/api/cart', (req, res) => res.json(req.session.cart || []));
 
 app.post('/api/cart', (req, res) => {
-  const { productId, quantity } = req.body;
-  let cart = req.session.cart || [];
-  const product = db.prepare('SELECT * FROM products WHERE id = ?').get(productId);
-  if (!product) return res.status(404).json({ error: 'Товар не найден' });
-  const existing = cart.find(item => item.productId === productId);
-  if (existing) {
-    existing.quantity = quantity > 0 ? quantity : existing.quantity;
-    if (quantity <= 0) cart = cart.filter(item => item.productId !== productId);
-  } else if (quantity > 0) cart.push({ productId, quantity });
-  req.session.cart = cart;
-  res.json(cart);
+  try {
+    const { productId, quantity } = req.body;
+    let cart = req.session.cart || [];
+    const product = db.prepare('SELECT * FROM products WHERE id = ?').get(productId);
+    if (!product) return res.status(404).json({ error: 'Товар не найден' });
+    const existing = cart.find(item => item.productId === productId);
+    if (existing) {
+      existing.quantity = quantity > 0 ? quantity : existing.quantity;
+      if (quantity <= 0) cart = cart.filter(item => item.productId !== productId);
+    } else if (quantity > 0) cart.push({ productId, quantity });
+    req.session.cart = cart;
+    res.json(cart);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 app.delete('/api/cart/:id', (req, res) => {
-  const id = parseInt(req.params.id);
-  let cart = req.session.cart || [];
-  cart = cart.filter(item => item.productId !== id);
-  req.session.cart = cart;
-  res.json(cart);
+  try {
+    const id = parseInt(req.params.id);
+    let cart = req.session.cart || [];
+    cart = cart.filter(item => item.productId !== id);
+    req.session.cart = cart;
+    res.json(cart);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // ---- Заказы ----
 app.post('/api/orders', (req, res) => {
-  if (!isAuthenticated(req)) return res.status(401).json({ error: 'Необходимо войти' });
-  if (isBlocked(req.session.userId)) return res.status(403).json({ error: 'Ваш аккаунт заблокирован' });
-  const cart = req.session.cart || [];
-  if (cart.length === 0) return res.status(400).json({ error: 'Корзина пуста' });
-  const ids = cart.map(item => item.productId);
-  const placeholders = ids.map(() => '?').join(',');
-  const products = db.prepare(`SELECT * FROM products WHERE id IN (${placeholders})`).all(...ids);
-  const productMap = {};
-  products.forEach(p => productMap[p.id] = p);
-  let total = 0;
-  const orderItems = cart.map(item => {
-    const product = productMap[item.productId];
-    const price = product ? product.price : 0;
-    total += price * item.quantity;
-    return { productId: item.productId, name: product ? product.name : 'Неизвестно', price, quantity: item.quantity };
-  });
-  const info = db.prepare('INSERT INTO orders (user_id, items, total, status) VALUES (?, ?, ?, ?)').run(req.session.userId, JSON.stringify(orderItems), total, 'pending');
-  req.session.cart = [];
-  res.json({ orderId: info.lastInsertRowid, total, message: 'Заказ создан' });
+  try {
+    if (!isAuthenticated(req)) return res.status(401).json({ error: 'Необходимо войти' });
+    if (isBlocked(req.session.userId)) return res.status(403).json({ error: 'Ваш аккаунт заблокирован' });
+    const cart = req.session.cart || [];
+    if (cart.length === 0) return res.status(400).json({ error: 'Корзина пуста' });
+    const ids = cart.map(item => item.productId);
+    const placeholders = ids.map(() => '?').join(',');
+    const products = db.prepare(`SELECT * FROM products WHERE id IN (${placeholders})`).all(...ids);
+    const productMap = {};
+    products.forEach(p => productMap[p.id] = p);
+    let total = 0;
+    const orderItems = cart.map(item => {
+      const product = productMap[item.productId];
+      const price = product ? product.price : 0;
+      total += price * item.quantity;
+      return { productId: item.productId, name: product ? product.name : 'Неизвестно', price, quantity: item.quantity };
+    });
+    const info = db.prepare('INSERT INTO orders (user_id, items, total, status) VALUES (?, ?, ?, ?)')
+      .run(req.session.userId, JSON.stringify(orderItems), total, 'pending');
+    req.session.cart = [];
+    res.json({ orderId: info.lastInsertRowid, total, message: 'Заказ создан' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 app.get('/api/orders/history', (req, res) => {
-  if (!isAuthenticated(req)) return res.status(401).json({ error: 'Необходимо войти' });
-  const stmt = db.prepare('SELECT * FROM orders WHERE user_id = ? AND is_deleted = 0 ORDER BY created_at DESC');
-  res.json(stmt.all(req.session.userId));
+  try {
+    if (!isAuthenticated(req)) return res.status(401).json({ error: 'Необходимо войти' });
+    const rows = db.prepare('SELECT * FROM orders WHERE user_id = ? AND is_deleted = 0 ORDER BY created_at DESC')
+      .all(req.session.userId);
+    res.json(rows);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 app.delete('/api/orders/history', (req, res) => {
-  if (!isAuthenticated(req)) return res.status(401).json({ error: 'Необходимо войти' });
-  const info = db.prepare('UPDATE orders SET is_deleted = 1 WHERE user_id = ?').run(req.session.userId);
-  res.json({ success: true, deleted: info.changes });
+  try {
+    if (!isAuthenticated(req)) return res.status(401).json({ error: 'Необходимо войти' });
+    const info = db.prepare('UPDATE orders SET is_deleted = 1 WHERE user_id = ?').run(req.session.userId);
+    res.json({ success: true, deleted: info.changes });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // ---- Админ-API ----
 app.put('/api/admin/settings', (req, res) => {
-  if (!isAdmin(req)) return res.status(403).json({ error: 'Доступ запрещён' });
-  const updates = req.body;
-  Object.entries(updates).forEach(([key, value]) => {
-    db.prepare('UPDATE settings SET value = ? WHERE key = ?').run(value, key);
-  });
-  res.json({ success: true });
+  try {
+    if (!isAdmin(req)) return res.status(403).json({ error: 'Доступ запрещён' });
+    const updates = req.body;
+    Object.entries(updates).forEach(([key, value]) => {
+      db.prepare('UPDATE settings SET value = ? WHERE key = ?').run(value, key);
+    });
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 app.post('/api/admin/login', (req, res) => {
-  const { login, password } = req.body;
-  const admin = db.prepare('SELECT * FROM admin WHERE login = ? AND password = ?').get(login, password);
-  if (!admin) return res.status(401).json({ error: 'Неверный логин или пароль' });
-  req.session.isAdmin = true;
-  res.json({ success: true });
+  try {
+    const { login, password } = req.body;
+    const admin = db.prepare('SELECT * FROM admin WHERE login = ? AND password = ?').get(login, password);
+    if (!admin) return res.status(401).json({ error: 'Неверный логин или пароль' });
+    req.session.isAdmin = true;
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 app.post('/api/admin/logout', (req, res) => {
@@ -423,157 +523,241 @@ app.get('/api/admin/status', (req, res) => {
 
 // ---- Админ: товары ----
 app.get('/api/admin/products', (req, res) => {
-  if (!isAdmin(req)) return res.status(403).json({ error: 'Доступ запрещён' });
-  res.json(db.prepare('SELECT p.*, c.name as category_name FROM products p JOIN categories c ON p.category_id = c.id').all());
+  try {
+    if (!isAdmin(req)) return res.status(403).json({ error: 'Доступ запрещён' });
+    const rows = db.prepare('SELECT p.*, c.name as category_name FROM products p JOIN categories c ON p.category_id = c.id').all();
+    res.json(rows);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 app.post('/api/admin/products', upload.single('image'), (req, res) => {
-  if (!isAdmin(req)) return res.status(403).json({ error: 'Доступ запрещён' });
-  const { name, price, category_id, imageUrl, description } = req.body;
-  let image = '';
-  if (req.file) image = '/uploads/' + req.file.filename;
-  else if (imageUrl && imageUrl.trim() !== '') image = imageUrl.trim();
-  if (!name || !price || !category_id) return res.status(400).json({ error: 'Заполните все поля' });
-  const info = db.prepare('INSERT INTO products (name, price, category_id, image, description) VALUES (?, ?, ?, ?, ?)').run(name, parseFloat(price), category_id, image, description || '');
-  db.prepare('INSERT INTO notifications (message) VALUES (?)').run('Добавлен новый товар: ' + name);
-  res.json({ id: info.lastInsertRowid });
+  try {
+    if (!isAdmin(req)) return res.status(403).json({ error: 'Доступ запрещён' });
+    const { name, price, category_id, imageUrl, description } = req.body;
+    let image = '';
+    if (req.file) image = '/uploads/' + req.file.filename;
+    else if (imageUrl && imageUrl.trim() !== '') image = imageUrl.trim();
+    if (!name || !price || !category_id) return res.status(400).json({ error: 'Заполните все поля' });
+    const info = db.prepare('INSERT INTO products (name, price, category_id, image, description) VALUES (?, ?, ?, ?, ?)')
+      .run(name, parseFloat(price), category_id, image, description || '');
+    db.prepare('INSERT INTO notifications (message) VALUES (?)').run('Добавлен новый товар: ' + name);
+    res.json({ id: info.lastInsertRowid });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 app.put('/api/admin/products/:id', upload.single('image'), (req, res) => {
-  if (!isAdmin(req)) return res.status(403).json({ error: 'Доступ запрещён' });
-  const id = req.params.id;
-  const { name, price, category_id, imageUrl, description } = req.body;
-  let image = '';
-  if (req.file) image = '/uploads/' + req.file.filename;
-  else if (imageUrl && imageUrl.trim() !== '') image = imageUrl.trim();
-  else image = '';
-  const info = db.prepare('UPDATE products SET name = ?, price = ?, category_id = ?, image = ?, description = ? WHERE id = ?').run(name, parseFloat(price), category_id, image, description || '', id);
-  if (info.changes === 0) return res.status(404).json({ error: 'Товар не найден' });
-  res.json({ success: true });
+  try {
+    if (!isAdmin(req)) return res.status(403).json({ error: 'Доступ запрещён' });
+    const id = req.params.id;
+    const { name, price, category_id, imageUrl, description } = req.body;
+    let image = '';
+    if (req.file) image = '/uploads/' + req.file.filename;
+    else if (imageUrl && imageUrl.trim() !== '') image = imageUrl.trim();
+    else image = '';
+    const info = db.prepare('UPDATE products SET name = ?, price = ?, category_id = ?, image = ?, description = ? WHERE id = ?')
+      .run(name, parseFloat(price), category_id, image, description || '', id);
+    if (info.changes === 0) return res.status(404).json({ error: 'Товар не найден' });
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 app.delete('/api/admin/products/:id', (req, res) => {
-  if (!isAdmin(req)) return res.status(403).json({ error: 'Доступ запрещён' });
-  const info = db.prepare('DELETE FROM products WHERE id = ?').run(req.params.id);
-  if (info.changes === 0) return res.status(404).json({ error: 'Товар не найден' });
-  res.json({ success: true });
+  try {
+    if (!isAdmin(req)) return res.status(403).json({ error: 'Доступ запрещён' });
+    const info = db.prepare('DELETE FROM products WHERE id = ?').run(req.params.id);
+    if (info.changes === 0) return res.status(404).json({ error: 'Товар не найден' });
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // ---- Админ: категории ----
 app.get('/api/admin/categories', (req, res) => {
-  if (!isAdmin(req)) return res.status(403).json({ error: 'Доступ запрещён' });
-  res.json(db.prepare('SELECT * FROM categories ORDER BY name').all());
+  try {
+    if (!isAdmin(req)) return res.status(403).json({ error: 'Доступ запрещён' });
+    const rows = db.prepare('SELECT * FROM categories ORDER BY name').all();
+    res.json(rows);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 app.post('/api/admin/categories', (req, res) => {
-  if (!isAdmin(req)) return res.status(403).json({ error: 'Доступ запрещён' });
-  const { name } = req.body;
-  if (!name) return res.status(400).json({ error: 'Введите название категории' });
-  const info = db.prepare('INSERT INTO categories (name) VALUES (?)').run(name);
-  res.json({ id: info.lastInsertRowid });
+  try {
+    if (!isAdmin(req)) return res.status(403).json({ error: 'Доступ запрещён' });
+    const { name } = req.body;
+    if (!name) return res.status(400).json({ error: 'Введите название категории' });
+    const info = db.prepare('INSERT INTO categories (name) VALUES (?)').run(name);
+    res.json({ id: info.lastInsertRowid });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 app.put('/api/admin/categories/:id', (req, res) => {
-  if (!isAdmin(req)) return res.status(403).json({ error: 'Доступ запрещён' });
-  const { name } = req.body;
-  if (!name) return res.status(400).json({ error: 'Введите название категории' });
-  const info = db.prepare('UPDATE categories SET name = ? WHERE id = ?').run(name, req.params.id);
-  if (info.changes === 0) return res.status(404).json({ error: 'Категория не найдена' });
-  res.json({ success: true });
+  try {
+    if (!isAdmin(req)) return res.status(403).json({ error: 'Доступ запрещён' });
+    const { name } = req.body;
+    if (!name) return res.status(400).json({ error: 'Введите название категории' });
+    const info = db.prepare('UPDATE categories SET name = ? WHERE id = ?').run(name, req.params.id);
+    if (info.changes === 0) return res.status(404).json({ error: 'Категория не найдена' });
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 app.delete('/api/admin/categories/:id', (req, res) => {
-  if (!isAdmin(req)) return res.status(403).json({ error: 'Доступ запрещён' });
-  const info = db.prepare('DELETE FROM categories WHERE id = ?').run(req.params.id);
-  if (info.changes === 0) return res.status(404).json({ error: 'Категория не найдена' });
-  res.json({ success: true });
+  try {
+    if (!isAdmin(req)) return res.status(403).json({ error: 'Доступ запрещён' });
+    const info = db.prepare('DELETE FROM categories WHERE id = ?').run(req.params.id);
+    if (info.changes === 0) return res.status(404).json({ error: 'Категория не найдена' });
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // ---- Админ: пользователи ----
 app.get('/api/admin/users', (req, res) => {
-  if (!isAdmin(req)) return res.status(403).json({ error: 'Доступ запрещён' });
-  res.json(db.prepare('SELECT id, first_name, last_name, login, is_blocked, created_at FROM users ORDER BY id DESC').all());
+  try {
+    if (!isAdmin(req)) return res.status(403).json({ error: 'Доступ запрещён' });
+    const rows = db.prepare('SELECT id, first_name, last_name, login, is_blocked, created_at FROM users ORDER BY id DESC').all();
+    res.json(rows);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 app.put('/api/admin/users/:id/block', (req, res) => {
-  if (!isAdmin(req)) return res.status(403).json({ error: 'Доступ запрещён' });
-  const { block } = req.body;
-  const info = db.prepare('UPDATE users SET is_blocked = ? WHERE id = ?').run(block ? 1 : 0, req.params.id);
-  if (info.changes === 0) return res.status(404).json({ error: 'Пользователь не найден' });
-  res.json({ success: true });
+  try {
+    if (!isAdmin(req)) return res.status(403).json({ error: 'Доступ запрещён' });
+    const { block } = req.body;
+    const info = db.prepare('UPDATE users SET is_blocked = ? WHERE id = ?').run(block ? 1 : 0, req.params.id);
+    if (info.changes === 0) return res.status(404).json({ error: 'Пользователь не найден' });
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 app.delete('/api/admin/users/:id', (req, res) => {
-  if (!isAdmin(req)) return res.status(403).json({ error: 'Доступ запрещён' });
-  const info = db.prepare('DELETE FROM users WHERE id = ?').run(req.params.id);
-  if (info.changes === 0) return res.status(404).json({ error: 'Пользователь не найден' });
-  res.json({ success: true });
+  try {
+    if (!isAdmin(req)) return res.status(403).json({ error: 'Доступ запрещён' });
+    const info = db.prepare('DELETE FROM users WHERE id = ?').run(req.params.id);
+    if (info.changes === 0) return res.status(404).json({ error: 'Пользователь не найден' });
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // ---- Админ: новости ----
 app.get('/api/admin/news', (req, res) => {
-  if (!isAdmin(req)) return res.status(403).json({ error: 'Доступ запрещён' });
-  res.json(db.prepare('SELECT * FROM news ORDER BY created_at DESC').all());
+  try {
+    if (!isAdmin(req)) return res.status(403).json({ error: 'Доступ запрещён' });
+    const rows = db.prepare('SELECT * FROM news ORDER BY created_at DESC').all();
+    res.json(rows);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 app.post('/api/admin/news', (req, res) => {
-  if (!isAdmin(req)) return res.status(403).json({ error: 'Доступ запрещён' });
-  const { title, content, is_active } = req.body;
-  if (!title || !content) return res.status(400).json({ error: 'Заполните заголовок и текст' });
-  const info = db.prepare('INSERT INTO news (title, content, is_active) VALUES (?, ?, ?)').run(title, content, is_active || 1);
-  res.json({ id: info.lastInsertRowid });
+  try {
+    if (!isAdmin(req)) return res.status(403).json({ error: 'Доступ запрещён' });
+    const { title, content, is_active } = req.body;
+    if (!title || !content) return res.status(400).json({ error: 'Заполните заголовок и текст' });
+    const info = db.prepare('INSERT INTO news (title, content, is_active) VALUES (?, ?, ?)')
+      .run(title, content, is_active || 1);
+    res.json({ id: info.lastInsertRowid });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 app.put('/api/admin/news/:id', (req, res) => {
-  if (!isAdmin(req)) return res.status(403).json({ error: 'Доступ запрещён' });
-  const { title, content, is_active } = req.body;
-  const info = db.prepare('UPDATE news SET title = ?, content = ?, is_active = ? WHERE id = ?').run(title, content, is_active, req.params.id);
-  if (info.changes === 0) return res.status(404).json({ error: 'Новость не найдена' });
-  res.json({ success: true });
+  try {
+    if (!isAdmin(req)) return res.status(403).json({ error: 'Доступ запрещён' });
+    const { title, content, is_active } = req.body;
+    const info = db.prepare('UPDATE news SET title = ?, content = ?, is_active = ? WHERE id = ?')
+      .run(title, content, is_active, req.params.id);
+    if (info.changes === 0) return res.status(404).json({ error: 'Новость не найдена' });
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 app.delete('/api/admin/news/:id', (req, res) => {
-  if (!isAdmin(req)) return res.status(403).json({ error: 'Доступ запрещён' });
-  const info = db.prepare('DELETE FROM news WHERE id = ?').run(req.params.id);
-  if (info.changes === 0) return res.status(404).json({ error: 'Новость не найдена' });
-  res.json({ success: true });
+  try {
+    if (!isAdmin(req)) return res.status(403).json({ error: 'Доступ запрещён' });
+    const info = db.prepare('DELETE FROM news WHERE id = ?').run(req.params.id);
+    if (info.changes === 0) return res.status(404).json({ error: 'Новость не найдена' });
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // ---- Админ: заказы ----
 app.get('/api/admin/orders', (req, res) => {
-  if (!isAdmin(req)) return res.status(403).json({ error: 'Доступ запрещён' });
-  const stmt = db.prepare(`
-    SELECT orders.*, users.first_name, users.last_name, users.login
-    FROM orders
-    JOIN users ON orders.user_id = users.id
-    ORDER BY orders.created_at DESC
-  `);
-  res.json(stmt.all());
+  try {
+    if (!isAdmin(req)) return res.status(403).json({ error: 'Доступ запрещён' });
+    const stmt = db.prepare(`
+      SELECT orders.*, users.first_name, users.last_name, users.login
+      FROM orders
+      JOIN users ON orders.user_id = users.id
+      ORDER BY orders.created_at DESC
+    `);
+    res.json(stmt.all());
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 app.put('/api/admin/orders/:id', (req, res) => {
-  if (!isAdmin(req)) return res.status(403).json({ error: 'Доступ запрещён' });
-  const { status } = req.body;
-  if (!status) return res.status(400).json({ error: 'Укажите статус' });
-  const info = db.prepare('UPDATE orders SET status = ? WHERE id = ?').run(status, req.params.id);
-  if (info.changes === 0) return res.status(404).json({ error: 'Заказ не найден' });
-  res.json({ success: true });
+  try {
+    if (!isAdmin(req)) return res.status(403).json({ error: 'Доступ запрещён' });
+    const { status } = req.body;
+    if (!status) return res.status(400).json({ error: 'Укажите статус' });
+    const info = db.prepare('UPDATE orders SET status = ? WHERE id = ?').run(status, req.params.id);
+    if (info.changes === 0) return res.status(404).json({ error: 'Заказ не найден' });
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // ---- Фон (админ) ----
 app.post('/api/admin/upload-background', upload.single('background'), (req, res) => {
-  if (!isAdmin(req)) return res.status(403).json({ error: 'Доступ запрещён' });
-  if (!req.file) return res.status(400).json({ error: 'Файл не загружен' });
-  const filePath = '/uploads/backgrounds/' + req.file.filename;
-  db.prepare('UPDATE settings SET value = ? WHERE key = ?').run(filePath, 'site_background');
-  res.json({ success: true, path: filePath });
+  try {
+    if (!isAdmin(req)) return res.status(403).json({ error: 'Доступ запрещён' });
+    if (!req.file) return res.status(400).json({ error: 'Файл не загружен' });
+    const filePath = '/uploads/backgrounds/' + req.file.filename;
+    db.prepare('UPDATE settings SET value = ? WHERE key = ?').run(filePath, 'site_background');
+    res.json({ success: true, path: filePath });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 app.put('/api/admin/background', (req, res) => {
-  if (!isAdmin(req)) return res.status(403).json({ error: 'Доступ запрещён' });
-  const { url } = req.body;
-  db.prepare('UPDATE settings SET value = ? WHERE key = ?').run(url || '', 'site_background');
-  res.json({ success: true });
+  try {
+    if (!isAdmin(req)) return res.status(403).json({ error: 'Доступ запрещён' });
+    const { url } = req.body;
+    db.prepare('UPDATE settings SET value = ? WHERE key = ?').run(url || '', 'site_background');
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // ---- ЗАПУСК ----

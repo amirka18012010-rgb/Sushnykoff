@@ -3,46 +3,34 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>🥤 Магазин напитков — купить вкусные напитки с доставкой по Нальчику</title>
+  <title>🥤 Магазин напитков — купить вкусные напитки</title>
   <meta name="description" content="Широкий ассортимент газировок, соков, воды, энергетиков и чая. Быстрая доставка по Нальчику.">
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🧃</text></svg>">
-  <link rel="stylesheet" href="style.css?v=9">
-<script src="script.js?v=9"></script>
+  <link rel="stylesheet" href="style.css?v=10">
 </head>
 <body>
 
-<!-- ===== ОСНОВНОЙ КОНТЕЙНЕР ===== -->
 <div class="container">
   <header class="header">
     <h1>🥤 <span>Drink</span>Store</h1>
     <div class="header-actions">
-      <!-- Корзина -->
       <button class="cart-btn" id="openCartBtn">🛒 <span class="badge" id="cartCount">0</span></button>
-
-      <!-- Уведомления -->
       <button id="notifBtn" class="admin-btn" style="background:#f39c12; position:relative; padding:8px 16px;">
         🔔 <span id="notifBadge" style="position:absolute; top:-5px; right:-5px; background:#e74c3c; color:white; border-radius:50%; padding:2px 6px; font-size:12px; display:none;">0</span>
       </button>
-
-      <!-- Кнопки входа/регистрации -->
       <div id="authButtons">
         <button id="loginBtn" class="admin-btn" style="background:#3498db;">Войти</button>
         <button id="registerBtn" class="admin-btn" style="background:#2ecc71;">Регистрация</button>
       </div>
-
-      <!-- Информация о пользователе (скрыта по умолчанию) -->
       <div id="userInfo" style="display:none; align-items:center; gap:10px;">
         <span id="userName" style="color:#2c3e50; font-weight:600;"></span>
         <a href="/profile.html" class="admin-btn" style="background:#9b59b6; text-decoration:none;">👤 Профиль</a>
         <button id="logoutBtn" class="admin-btn" style="background:#e74c3c;">Выйти</button>
       </div>
-
-      <!-- Админка (скрыта по умолчанию) -->
       <a href="admin.html" class="admin-btn" id="adminLink" style="display:none;">⚙️ Админка</a>
     </div>
   </header>
 
-  <!-- Фильтр и поиск -->
   <div class="filter-section">
     <label for="categoryFilter">Категория:</label>
     <select id="categoryFilter"><option value="all">Все</option></select>
@@ -50,12 +38,11 @@
     <button class="reset-btn" id="resetFilterBtn">Сбросить</button>
   </div>
 
-  <!-- Список товаров -->
   <div class="products-grid" id="productsGrid"></div>
   <div class="pagination" id="pagination"></div>
 </div>
 
-<!-- ===== БУРГЕР-МЕНЮ (вынесен за пределы .container, чтобы быть поверх всего) ===== -->
+<!-- ===== БУРГЕР (вне .container) ===== -->
 <div class="burger-wrapper" id="burgerWrapper">
   <button class="burger-btn" id="burgerBtn" aria-label="Меню">
     <span></span>
@@ -69,7 +56,7 @@
   </div>
 </div>
 
-<!-- ===== МОДАЛКА КОРЗИНЫ ===== -->
+<!-- ===== МОДАЛКИ (все) ===== -->
 <div class="cart-overlay" id="cartOverlay">
   <div class="cart-panel">
     <div class="cart-header">
@@ -85,7 +72,6 @@
   </div>
 </div>
 
-<!-- ===== МОДАЛКА ВХОДА ===== -->
 <div class="auth-overlay" id="loginOverlay">
   <div class="auth-panel">
     <div class="auth-header">
@@ -105,7 +91,6 @@
   </div>
 </div>
 
-<!-- ===== МОДАЛКА РЕГИСТРАЦИИ ===== -->
 <div class="auth-overlay" id="registerOverlay">
   <div class="auth-panel">
     <div class="auth-header">
@@ -123,7 +108,6 @@
   </div>
 </div>
 
-<!-- ===== МОДАЛКА ВОССТАНОВЛЕНИЯ ===== -->
 <div class="auth-overlay" id="recoverOverlay">
   <div class="auth-panel">
     <div class="auth-header">
@@ -149,7 +133,6 @@
   </div>
 </div>
 
-<!-- ===== МОДАЛКА УВЕДОМЛЕНИЙ ===== -->
 <div class="auth-overlay" id="notifOverlay">
   <div class="auth-panel" style="max-width:500px;">
     <div class="auth-header">
@@ -161,7 +144,6 @@
   </div>
 </div>
 
-<!-- ===== МОДАЛКА НОВОСТЕЙ ===== -->
 <div class="auth-overlay" id="newsOverlay">
   <div class="auth-panel" style="max-width:600px;">
     <div class="auth-header">
@@ -173,6 +155,7 @@
   </div>
 </div>
 
-<script src="script.js?v=6"></script>
+<!-- ===== ТОЛЬКО ОДИН СКРИПТ ===== -->
+<script src="script.js?v=10"></script>
 </body>
 </html>
