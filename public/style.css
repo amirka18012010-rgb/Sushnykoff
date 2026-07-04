@@ -125,6 +125,7 @@ body.has-bg .side-header {
   background: #c0392b !important;
 }
 
+/* Скрытая админ-кнопка */
 #adminLink {
   display: none !important;
 }
@@ -522,7 +523,7 @@ body.has-bg .side-header {
   background: #1e8449;
 }
 
-/* ===== Адаптивность ===== */
+/* ===== Адаптивность (ключевое изменение для телефонов) ===== */
 @media (max-width: 768px) {
   .header {
     flex-direction: column;
@@ -542,7 +543,10 @@ body.has-bg .side-header {
   }
   .products-grid {
     grid-template-columns: 1fr 1fr;
-    gap: 16px;
+    gap: 12px;
+  }
+  .product-card .product-img {
+    height: 120px;
   }
   .side-header {
     right: 8px;
@@ -558,25 +562,78 @@ body.has-bg .side-header {
     max-width: 100%;
   }
 }
+
+/* Специально для телефонов: две колонки, уменьшенные карточки */
 @media (max-width: 480px) {
   .products-grid {
-    grid-template-columns: 1fr;
+    grid-template-columns: 1fr 1fr; /* две колонки */
+    gap: 8px;
+  }
+  .product-card {
+    padding: 10px;
+    border-radius: 16px;
   }
   .product-card .product-img {
-    height: 180px;
+    height: 80px; /* уменьшаем изображение */
+  }
+  .product-card .name {
+    font-size: 14px;
+  }
+  .product-card .type {
+    font-size: 11px;
+    padding: 2px 10px;
+    margin-bottom: 6px;
+  }
+  .product-card .price {
+    font-size: 16px;
+    margin-bottom: 8px;
+  }
+  .product-card .add-btn {
+    font-size: 12px;
+    padding: 6px 0;
+  }
+  .product-card .fav-btn {
+    font-size: 18px;
+  }
+  .header h1 {
+    font-size: 22px;
+  }
+  .cart-btn, .admin-btn {
+    padding: 6px 12px;
+    font-size: 13px;
+  }
+  .filter-section {
+    padding: 12px 16px;
+    gap: 8px;
+  }
+  .filter-section select, .filter-section input {
+    padding: 6px 12px;
+    font-size: 13px;
+  }
+  .pagination .page-btn {
+    padding: 4px 10px;
+    font-size: 13px;
   }
 }
 
-/* Фиксированный боковой хедер (не зависит от фона) */
-.side-header {
-  position: fixed !important;
-  top: 50% !important;
-  right: 20px !important;
-  transform: translateY(-50%) !important;
-  z-index: 999 !important;
-}
-body.has-bg .side-header {
-  position: fixed !important;
-  top: 50% !important;
-  transform: translateY(-50%) !important;
+@media (max-width: 360px) {
+  .products-grid {
+    gap: 6px;
+  }
+  .product-card {
+    padding: 6px;
+  }
+  .product-card .product-img {
+    height: 60px;
+  }
+  .product-card .name {
+    font-size: 12px;
+  }
+  .product-card .price {
+    font-size: 14px;
+  }
+  .product-card .add-btn {
+    font-size: 10px;
+    padding: 4px 0;
+  }
 }
