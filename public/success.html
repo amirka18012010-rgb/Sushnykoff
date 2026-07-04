@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Оплата успешна</title>
+  <link rel="stylesheet" href="style.css">
+  <style>
+    .success-container {
+      max-width: 600px;
+      margin: 100px auto;
+      padding: 40px;
+      background: white;
+      border-radius: 20px;
+      box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+      text-align: center;
+    }
+    .success-container h1 { color: #27ae60; margin-bottom: 20px; }
+    .success-container p { color: #2c3e50; font-size: 18px; }
+    .btn-home {
+      display: inline-block;
+      margin-top: 20px;
+      padding: 12px 30px;
+      background: #27ae60;
+      color: white;
+      border-radius: 50px;
+      text-decoration: none;
+      font-weight: 600;
+    }
+  </style>
+</head>
+<body>
+<div class="success-container">
+  <h1>✅ Оплата прошла успешно!</h1>
+  <p>Ваш заказ №<span id="orderId"></span> оплачен.</p>
+  <p>Мы свяжемся с вами в ближайшее время.</p>
+  <a href="/" class="btn-home">🏠 На главную</a>
+</div>
+<script>
+  const params = new URLSearchParams(window.location.search);
+  const orderId = params.get('orderId');
+  if (orderId) {
+    document.getElementById('orderId').textContent = orderId;
+  }
+</script>
+</body>
+</html>

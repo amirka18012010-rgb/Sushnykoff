@@ -1,0 +1,958 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Администрирование</title>
+  <link rel="stylesheet" href="style.css">
+  <style>
+    .admin-login {
+      max-width: 400px;
+      margin: 100px auto;
+      padding: 30px;
+      background: white;
+      border-radius: 24px;
+      box-shadow: 0 20px 60px rgba(0,0,0,0.08);
+    }
+    .admin-login input {
+      width: 100%;
+      padding: 12px 16px;
+      margin: 8px 0;
+      border: 1px solid #ecf0f1;
+      border-radius: 16px;
+      font-size: 15px;
+    }
+    .admin-login button {
+      width: 100%;
+      padding: 14px;
+      background: #27ae60;
+      color: white;
+      border: none;
+      border-radius: 40px;
+      font-weight: 700;
+      cursor: pointer;
+      font-size: 16px;
+      transition: background 0.2s;
+    }
+    .admin-login button:hover {
+      background: #1e8449;
+    }
+    .admin-panel {
+      display: none;
+    }
+    .admin-panel.active {
+      display: block;
+    }
+    .admin-form {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 15px;
+      background: rgba(248,249,250,0.7);
+      backdrop-filter: blur(4px);
+      padding: 20px;
+      border-radius: 20px;
+      margin-bottom: 20px;
+      border: 1px solid rgba(0,0,0,0.02);
+    }
+    .admin-form .full-width {
+      grid-column: 1 / -1;
+    }
+    .admin-form label {
+      font-weight: 600;
+      display: block;
+      margin-bottom: 4px;
+      color: #2c3e50;
+    }
+    .admin-form input,
+    .admin-form select,
+    .admin-form textarea {
+      width: 100%;
+      padding: 10px 14px;
+      border: 1px solid rgba(0,0,0,0.06);
+      border-radius: 14px;
+      font-size: 15px;
+      background: rgba(255,255,255,0.6);
+      backdrop-filter: blur(4px);
+      transition: border-color 0.2s;
+    }
+    .admin-form input:focus,
+    .admin-form select:focus,
+    .admin-form textarea:focus {
+      border-color: #27ae60;
+      outline: none;
+    }
+    .admin-list-item {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 12px 16px;
+      background: rgba(255,255,255,0.6);
+      backdrop-filter: blur(4px);
+      border-radius: 16px;
+      margin-bottom: 8px;
+      border: 1px solid rgba(0,0,0,0.02);
+      flex-wrap: wrap;
+      gap: 10px;
+    }
+    .admin-list-item .item-preview {
+      display: flex;
+      align-items: center;
+      gap: 15px;
+    }
+    .admin-list-item .item-preview img {
+      width: 50px;
+      height: 50px;
+      object-fit: contain;
+      background: rgba(0,0,0,0.02);
+      border-radius: 10px;
+    }
+    .admin-list-item .item-actions button {
+      border: none;
+      padding: 6px 16px;
+      border-radius: 30px;
+      font-weight: 600;
+      cursor: pointer;
+      margin-left: 5px;
+      transition: background 0.2s;
+    }
+    .edit-btn {
+      background: #3498db;
+      color: white;
+    }
+    .edit-btn:hover {
+      background: #2980b9;
+    }
+    .delete-btn {
+      background: #e74c3c;
+      color: white;
+    }
+    .delete-btn:hover {
+      background: #c0392b;
+    }
+    .block-btn {
+      background: #f39c12;
+      color: white;
+    }
+    .block-btn:hover {
+      background: #d68910;
+    }
+    .tab-btn {
+      cursor: pointer;
+      padding: 10px 18px !important;
+    }
+    .tab-content {
+      display: none;
+    }
+    .tab-content.active {
+      display: block;
+    }
+    .preview-box {
+      border: 2px dashed rgba(0,0,0,0.08);
+      padding: 16px;
+      text-align: center;
+      border-radius: 16px;
+      background: rgba(255,255,255,0.4);
+      min-height: 100px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .preview-box img {
+      max-width: 100%;
+      max-height: 150px;
+      border-radius: 12px;
+    }
+    .preview-box .empty {
+      color: #999;
+    }
+    .bg-form-row {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+    .bg-form-row input[type="text"] {
+      flex: 1;
+      min-width: 200px;
+    }
+    .bg-form-row button {
+      padding: 10px 24px;
+      border: none;
+      border-radius: 40px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+    .bg-form-row .btn-green {
+      background: #27ae60;
+      color: white;
+    }
+    .bg-form-row .btn-green:hover {
+      background: #1e8449;
+    }
+    .bg-form-row .btn-red {
+      background: #e74c3c;
+      color: white;
+    }
+    .bg-form-row .btn-red:hover {
+      background: #c0392b;
+    }
+    #bgMessage {
+      margin-top: 10px;
+      font-weight: 500;
+    }
+  </style>
+</head>
+<body>
+<div class="container">
+  <div id="adminLogin" class="admin-login">
+    <h2 style="margin-bottom:16px;">🔐 Вход в админку</h2>
+    <input type="text" id="loginInput" placeholder="Логин" value="admin">
+    <input type="password" id="passwordInput" placeholder="Пароль" value="admin123">
+    <button id="loginBtn">Войти</button>
+    <div id="loginError" style="color:#e74c3c; margin-top:10px;"></div>
+  </div>
+
+  <div id="adminPanel" class="admin-panel">
+    <header class="header glass">
+      <h1>⚙️ Администрирование</h1>
+      <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
+        <button class="tab-btn admin-btn" data-tab="products" style="background:#27ae60;">Товары</button>
+        <button class="tab-btn admin-btn" data-tab="categories" style="background:#f39c12;">Категории</button>
+        <button class="tab-btn admin-btn" data-tab="orders" style="background:#3498db;">Заказы</button>
+        <button class="tab-btn admin-btn" data-tab="users" style="background:#9b59b6;">Пользователи</button>
+        <button class="tab-btn admin-btn" data-tab="news" style="background:#e67e22;">Новости</button>
+        <button class="tab-btn admin-btn" data-tab="settings" style="background:#1abc9c;">Настройки</button>
+        <button class="tab-btn admin-btn" data-tab="design" style="background:#8e44ad;">Дизайн</button>
+        <a href="/" class="admin-btn" style="background:#2c3e50; text-decoration:none;">🏠 На сайт</a>
+        <button id="logoutBtn" class="admin-btn" style="background:#e74c3c;">Выйти</button>
+      </div>
+    </header>
+
+    <!-- ===== Товары ===== -->
+    <div id="tab-products" class="tab-content active">
+      <form id="productForm" class="admin-form">
+        <input type="hidden" id="editId" value="">
+        <div>
+          <label>Название *</label>
+          <input type="text" id="productName" required>
+        </div>
+        <div>
+          <label>Цена (₽) *</label>
+          <input type="number" id="productPrice" required min="0" step="0.01">
+        </div>
+        <div>
+          <label>Категория *</label>
+          <select id="productCategory" required></select>
+        </div>
+        <div>
+          <label>Фото (ссылка или файл)</label>
+          <input type="text" id="productImageUrl" placeholder="https://...">
+          <input type="file" id="productImage" accept="image/*" style="margin-top:6px;">
+        </div>
+        <div class="full-width">
+          <label>Описание</label>
+          <textarea id="productDescription" rows="3"></textarea>
+        </div>
+        <button type="submit" id="formSubmitBtn" style="grid-column:1/-1; padding:14px; background:#27ae60; color:white; border:none; border-radius:40px; font-weight:700; cursor:pointer;">➕ Добавить товар</button>
+      </form>
+      <div id="adminProductList"></div>
+    </div>
+
+    <!-- ===== Категории ===== -->
+    <div id="tab-categories" class="tab-content">
+      <h3 style="margin-bottom:16px;">Управление категориями</h3>
+      <form id="categoryForm" class="admin-form">
+        <div class="full-width">
+          <label>Название категории</label>
+          <input type="text" id="categoryName" placeholder="Например: Газировка" required>
+          <input type="hidden" id="editCategoryId" value="">
+        </div>
+        <button type="submit" id="categorySubmitBtn" style="grid-column:1/-1; padding:14px; background:#27ae60; color:white; border:none; border-radius:40px; font-weight:700; cursor:pointer;">➕ Добавить категорию</button>
+      </form>
+      <div id="categoryList"></div>
+    </div>
+
+    <!-- ===== Заказы ===== -->
+    <div id="tab-orders" class="tab-content">
+      <h3 style="margin-bottom:16px;">Список заказов</h3>
+      <div id="ordersList"></div>
+    </div>
+
+    <!-- ===== Пользователи ===== -->
+    <div id="tab-users" class="tab-content">
+      <h3 style="margin-bottom:16px;">Список пользователей</h3>
+      <div id="usersList"></div>
+    </div>
+
+    <!-- ===== Новости ===== -->
+    <div id="tab-news" class="tab-content">
+      <h3 style="margin-bottom:16px;">Управление новостями</h3>
+      <form id="newsForm" class="admin-form">
+        <div class="full-width">
+          <label>Заголовок</label>
+          <input type="text" id="newsTitle" required>
+        </div>
+        <div class="full-width">
+          <label>Текст</label>
+          <textarea id="newsContent" rows="4" required></textarea>
+        </div>
+        <div class="full-width">
+          <label>Активно</label>
+          <select id="newsActive">
+            <option value="1">Да</option>
+            <option value="0">Нет</option>
+          </select>
+        </div>
+        <input type="hidden" id="editNewsId" value="">
+        <button type="submit" id="newsSubmitBtn" style="grid-column:1/-1; padding:14px; background:#27ae60; color:white; border:none; border-radius:40px; font-weight:700; cursor:pointer;">➕ Добавить новость</button>
+      </form>
+      <div id="newsList"></div>
+    </div>
+
+    <!-- ===== Настройки ===== -->
+    <div id="tab-settings" class="tab-content">
+      <h3 style="margin-bottom:16px;">Настройки сайта</h3>
+      <form id="settingsForm" class="admin-form">
+        <div class="full-width">
+          <label>Текст "О нас"</label>
+          <textarea id="settingsAbout" rows="5"></textarea>
+        </div>
+        <div>
+          <label>Адрес</label>
+          <input type="text" id="settingsAddress">
+        </div>
+        <div>
+          <label>Телефон</label>
+          <input type="text" id="settingsPhone">
+        </div>
+        <div>
+          <label>Email</label>
+          <input type="email" id="settingsEmail">
+        </div>
+        <div>
+          <label>График работы</label>
+          <input type="text" id="settingsSchedule">
+        </div>
+        <button type="submit" style="grid-column:1/-1; padding:14px; background:#27ae60; color:white; border:none; border-radius:40px; font-weight:700; cursor:pointer;">💾 Сохранить настройки</button>
+      </form>
+      <div id="settingsMessage" style="margin-top:10px;"></div>
+    </div>
+
+    <!-- ===== Дизайн ===== -->
+    <div id="tab-design" class="tab-content">
+      <h3 style="margin-bottom:16px;">Настройка фона сайта</h3>
+      <div class="admin-form">
+        <div class="full-width">
+          <label>Текущий фон</label>
+          <div id="bgPreview" class="preview-box">
+            <span class="empty">Фон не установлен</span>
+          </div>
+        </div>
+        <div class="full-width">
+          <label>Установить фон по ссылке</label>
+          <div class="bg-form-row">
+            <input type="text" id="bgUrl" placeholder="https://example.com/image.jpg">
+            <button id="setBgUrlBtn" class="btn-green">Применить</button>
+          </div>
+        </div>
+        <div class="full-width">
+          <label>Или загрузить изображение</label>
+          <div class="bg-form-row">
+            <input type="file" id="bgFile" accept="image/*">
+            <button id="uploadBgBtn" class="btn-green">Загрузить</button>
+          </div>
+        </div>
+        <div class="full-width">
+          <button id="removeBgBtn" class="btn-red">Удалить фон</button>
+        </div>
+        <div id="bgMessage" class="full-width"></div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<script>
+  // ===== ПОЛНЫЙ СКРИПТ АДМИНКИ =====
+
+  const loginDiv = document.getElementById('adminLogin');
+  const panelDiv = document.getElementById('adminPanel');
+  const loginBtn = document.getElementById('loginBtn');
+  const logoutBtn = document.getElementById('logoutBtn');
+  const loginError = document.getElementById('loginError');
+
+  // ----- Проверка статуса -----
+  fetch('/api/admin/status')
+    .then(r => r.json())
+    .then(data => {
+      if (data.isAdmin) {
+        loginDiv.style.display = 'none';
+        panelDiv.classList.add('active');
+        loadAll();
+        showTab('products');
+      }
+    });
+
+  // ----- Вход -----
+  loginBtn.addEventListener('click', () => {
+    const login = document.getElementById('loginInput').value.trim();
+    const password = document.getElementById('passwordInput').value.trim();
+    loginError.textContent = '';
+    fetch('/api/admin/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ login, password })
+    })
+      .then(r => r.json())
+      .then(data => {
+        if (data.success) {
+          location.reload();
+        } else {
+          loginError.textContent = data.error || 'Неверный логин или пароль';
+        }
+      })
+      .catch(err => {
+        loginError.textContent = 'Ошибка соединения: ' + err.message;
+      });
+  });
+
+  // ----- Выход -----
+  logoutBtn.addEventListener('click', () => {
+    fetch('/api/admin/logout', { method: 'POST' }).then(() => location.reload());
+  });
+
+  // ----- Переключение вкладок -----
+  function showTab(tabName) {
+    document.querySelectorAll('.tab-content').forEach(el => {
+      el.classList.remove('active');
+      el.style.display = 'none';
+    });
+    const target = document.getElementById('tab-' + tabName);
+    if (target) {
+      target.classList.add('active');
+      target.style.display = 'block';
+      if (tabName === 'settings') loadSettings();
+      if (tabName === 'design') loadBgPreview();
+    }
+  }
+
+  document.querySelectorAll('.tab-btn').forEach(btn => {
+    btn.addEventListener('click', function(e) {
+      e.preventDefault();
+      showTab(this.dataset.tab);
+    });
+  });
+
+  // ----- Загрузка всех данных -----
+  function loadAll() {
+    loadCategoriesSelect();
+    loadProductsAdmin();
+    loadCategoriesAdmin();
+    loadOrdersAdmin();
+    loadUsersAdmin();
+    loadNewsAdmin();
+  }
+
+  // ----- Загрузка категорий в select товара -----
+  function loadCategoriesSelect() {
+    fetch('/api/admin/categories')
+      .then(r => r.json())
+      .then(cats => {
+        const select = document.getElementById('productCategory');
+        select.innerHTML = '';
+        cats.forEach(c => {
+          const opt = document.createElement('option');
+          opt.value = c.id;
+          opt.textContent = c.name;
+          select.appendChild(opt);
+        });
+      });
+  }
+
+  // ----- Товары (админ) -----
+  function loadProductsAdmin() {
+    fetch('/api/admin/products')
+      .then(r => r.json())
+      .then(products => {
+        const list = document.getElementById('adminProductList');
+        if (products.length === 0) {
+          list.innerHTML = '<p>Товаров пока нет.</p>';
+          return;
+        }
+        list.innerHTML = products.map(p => `
+          <div class="admin-list-item">
+            <div class="item-preview">
+              ${p.image ? `<img src="${p.image}" alt="${p.name}">` : ''}
+              <div class="item-info">
+                <span class="name">${p.name}</span>
+                <span class="meta">${p.category_name} • ${p.price} ₽</span>
+              </div>
+            </div>
+            <div class="item-actions">
+              <button class="edit-btn" data-id="${p.id}">✏️</button>
+              <button class="delete-btn" data-id="${p.id}">🗑️</button>
+            </div>
+          </div>
+        `).join('');
+
+        list.querySelectorAll('.edit-btn').forEach(btn => {
+          btn.addEventListener('click', () => {
+            const id = parseInt(btn.dataset.id);
+            const product = products.find(p => p.id === id);
+            if (product) {
+              document.getElementById('editId').value = id;
+              document.getElementById('productName').value = product.name;
+              document.getElementById('productPrice').value = product.price;
+              document.getElementById('productCategory').value = product.category_id;
+              document.getElementById('productImageUrl').value = product.image || '';
+              document.getElementById('productDescription').value = product.description || '';
+              document.getElementById('formSubmitBtn').textContent = '💾 Сохранить изменения';
+            }
+          });
+        });
+
+        list.querySelectorAll('.delete-btn').forEach(btn => {
+          btn.addEventListener('click', () => {
+            if (confirm('Удалить товар?')) {
+              const id = parseInt(btn.dataset.id);
+              fetch(`/api/admin/products/${id}`, { method: 'DELETE' })
+                .then(() => loadProductsAdmin());
+            }
+          });
+        });
+      });
+  }
+
+  document.getElementById('productForm').addEventListener('submit', (e) => {
+    e.preventDefault();
+    const id = document.getElementById('editId').value;
+    const name = document.getElementById('productName').value;
+    const price = document.getElementById('productPrice').value;
+    const category_id = document.getElementById('productCategory').value;
+    const imageUrl = document.getElementById('productImageUrl').value.trim();
+    const description = document.getElementById('productDescription').value.trim();
+    const imageFile = document.getElementById('productImage').files[0];
+
+    const formData = new FormData();
+    formData.append('name', name);
+    formData.append('price', price);
+    formData.append('category_id', category_id);
+    formData.append('imageUrl', imageUrl);
+    formData.append('description', description);
+    if (imageFile) formData.append('image', imageFile);
+
+    const url = id ? `/api/admin/products/${id}` : '/api/admin/products';
+    const method = id ? 'PUT' : 'POST';
+
+    fetch(url, { method, body: formData })
+      .then(r => r.json())
+      .then(data => {
+        if (data.error) alert(data.error);
+        else {
+          loadProductsAdmin();
+          document.getElementById('productForm').reset();
+          document.getElementById('editId').value = '';
+          document.getElementById('productImageUrl').value = '';
+          document.getElementById('productDescription').value = '';
+          document.getElementById('formSubmitBtn').textContent = '➕ Добавить товар';
+        }
+      });
+  });
+
+  // ----- Категории (админ) -----
+  function loadCategoriesAdmin() {
+    fetch('/api/admin/categories')
+      .then(r => r.json())
+      .then(cats => {
+        const list = document.getElementById('categoryList');
+        if (cats.length === 0) {
+          list.innerHTML = '<p>Категорий пока нет. Создайте первую!</p>';
+          return;
+        }
+        list.innerHTML = cats.map(c => `
+          <div class="admin-list-item">
+            <div class="item-preview"><div class="item-info"><span class="name">${c.name}</span></div></div>
+            <div class="item-actions">
+              <button class="edit-btn" data-id="${c.id}">✏️</button>
+              <button class="delete-btn" data-id="${c.id}">🗑️</button>
+            </div>
+          </div>
+        `).join('');
+
+        list.querySelectorAll('.edit-btn').forEach(btn => {
+          btn.addEventListener('click', () => {
+            const id = parseInt(btn.dataset.id);
+            const cat = cats.find(c => c.id === id);
+            if (cat) {
+              document.getElementById('categoryName').value = cat.name;
+              document.getElementById('editCategoryId').value = id;
+              document.getElementById('categorySubmitBtn').textContent = '💾 Сохранить';
+            }
+          });
+        });
+
+        list.querySelectorAll('.delete-btn').forEach(btn => {
+          btn.addEventListener('click', () => {
+            if (confirm('Удалить категорию?')) {
+              const id = parseInt(btn.dataset.id);
+              fetch(`/api/admin/categories/${id}`, { method: 'DELETE' })
+                .then(() => {
+                  loadCategoriesAdmin();
+                  loadCategoriesSelect();
+                });
+            }
+          });
+        });
+      });
+  }
+
+  document.getElementById('categoryForm').addEventListener('submit', (e) => {
+    e.preventDefault();
+    const id = document.getElementById('editCategoryId').value;
+    const name = document.getElementById('categoryName').value;
+    const url = id ? `/api/admin/categories/${id}` : '/api/admin/categories';
+    const method = id ? 'PUT' : 'POST';
+    fetch(url, {
+      method,
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name })
+    })
+      .then(r => r.json())
+      .then(() => {
+        loadCategoriesAdmin();
+        loadCategoriesSelect();
+        document.getElementById('categoryForm').reset();
+        document.getElementById('editCategoryId').value = '';
+        document.getElementById('categorySubmitBtn').textContent = '➕ Добавить категорию';
+      });
+  });
+
+  // ----- Заказы (админ) -----
+  function loadOrdersAdmin() {
+    fetch('/api/admin/orders')
+      .then(r => r.json())
+      .then(orders => {
+        const list = document.getElementById('ordersList');
+        if (orders.length === 0) {
+          list.innerHTML = '<p>Заказов пока нет</p>';
+          return;
+        }
+        list.innerHTML = orders.map(order => `
+          <div class="admin-list-item">
+            <div class="item-preview">
+              <div class="item-info">
+                <span class="name">Заказ №${order.id}</span>
+                <span class="meta">Пользователь: ${order.first_name} ${order.last_name} (${order.login})</span>
+                <span class="meta">Сумма: ${order.total} ₽ • Статус: ${order.status}</span>
+                <span class="meta">Дата: ${new Date(order.created_at).toLocaleString()}</span>
+              </div>
+            </div>
+            <div class="item-actions">
+              <select class="status-select" data-id="${order.id}">
+                <option value="pending" ${order.status === 'pending' ? 'selected' : ''}>Ожидает</option>
+                <option value="paid" ${order.status === 'paid' ? 'selected' : ''}>Оплачен</option>
+                <option value="shipped" ${order.status === 'shipped' ? 'selected' : ''}>Отправлен</option>
+                <option value="delivered" ${order.status === 'delivered' ? 'selected' : ''}>Доставлен</option>
+              </select>
+              <button class="update-status" data-id="${order.id}">Обновить статус</button>
+            </div>
+          </div>
+        `).join('');
+
+        document.querySelectorAll('.update-status').forEach(btn => {
+          btn.addEventListener('click', function() {
+            const id = parseInt(this.dataset.id);
+            const select = document.querySelector(`.status-select[data-id="${id}"]`);
+            const status = select.value;
+            fetch(`/api/admin/orders/${id}`, {
+              method: 'PUT',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ status })
+            })
+              .then(r => r.json())
+              .then(data => {
+                if (data.success) {
+                  alert('Статус обновлён!');
+                  loadOrdersAdmin();
+                } else {
+                  alert('Ошибка: ' + data.error);
+                }
+              });
+          });
+        });
+      });
+  }
+
+  // ----- Пользователи (админ) -----
+  function loadUsersAdmin() {
+    fetch('/api/admin/users')
+      .then(r => r.json())
+      .then(users => {
+        const list = document.getElementById('usersList');
+        if (users.length === 0) {
+          list.innerHTML = '<p>Пользователей пока нет</p>';
+          return;
+        }
+        list.innerHTML = users.map(u => `
+          <div class="admin-list-item">
+            <div class="item-preview">
+              <div class="item-info">
+                <span class="name">${u.first_name} ${u.last_name}</span>
+                <span class="meta">${u.login}</span>
+                <span class="meta">${u.is_blocked ? '🔒 Заблокирован' : '✅ Активен'}</span>
+                <span class="meta">Зарегистрирован: ${new Date(u.created_at).toLocaleDateString()}</span>
+              </div>
+            </div>
+            <div class="item-actions">
+              <button class="block-btn" data-id="${u.id}" data-block="${u.is_blocked ? 0 : 1}">${u.is_blocked ? 'Разблокировать' : 'Заблокировать'}</button>
+              <button class="delete-btn" data-id="${u.id}">🗑️</button>
+            </div>
+          </div>
+        `).join('');
+
+        list.querySelectorAll('.block-btn').forEach(btn => {
+          btn.addEventListener('click', function() {
+            const id = parseInt(this.dataset.id);
+            const block = parseInt(this.dataset.block);
+            fetch(`/api/admin/users/${id}/block`, {
+              method: 'PUT',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ block })
+            })
+              .then(r => r.json())
+              .then(data => {
+                if (data.success) {
+                  loadUsersAdmin();
+                } else {
+                  alert('Ошибка: ' + data.error);
+                }
+              });
+          });
+        });
+
+        list.querySelectorAll('.delete-btn').forEach(btn => {
+          btn.addEventListener('click', function() {
+            if (confirm('Удалить пользователя?')) {
+              const id = parseInt(this.dataset.id);
+              fetch(`/api/admin/users/${id}`, { method: 'DELETE' })
+                .then(() => loadUsersAdmin());
+            }
+          });
+        });
+      });
+  }
+
+  // ----- Новости (админ) -----
+  function loadNewsAdmin() {
+    fetch('/api/admin/news')
+      .then(r => r.json())
+      .then(news => {
+        const list = document.getElementById('newsList');
+        if (news.length === 0) {
+          list.innerHTML = '<p>Новостей пока нет</p>';
+          return;
+        }
+        list.innerHTML = news.map(n => `
+          <div class="admin-list-item">
+            <div class="item-preview">
+              <div class="item-info">
+                <span class="name">${n.title}</span>
+                <span class="meta">${n.is_active ? 'Активно' : 'Неактивно'}</span>
+                <span class="meta">${new Date(n.created_at).toLocaleDateString()}</span>
+              </div>
+            </div>
+            <div class="item-actions">
+              <button class="edit-btn" data-id="${n.id}">✏️</button>
+              <button class="delete-btn" data-id="${n.id}">🗑️</button>
+            </div>
+          </div>
+        `).join('');
+
+        list.querySelectorAll('.edit-btn').forEach(btn => {
+          btn.addEventListener('click', () => {
+            const id = parseInt(btn.dataset.id);
+            const item = news.find(n => n.id === id);
+            if (item) {
+              document.getElementById('newsTitle').value = item.title;
+              document.getElementById('newsContent').value = item.content;
+              document.getElementById('newsActive').value = item.is_active;
+              document.getElementById('editNewsId').value = id;
+              document.getElementById('newsSubmitBtn').textContent = '💾 Сохранить';
+            }
+          });
+        });
+
+        list.querySelectorAll('.delete-btn').forEach(btn => {
+          btn.addEventListener('click', () => {
+            if (confirm('Удалить новость?')) {
+              const id = parseInt(btn.dataset.id);
+              fetch(`/api/admin/news/${id}`, { method: 'DELETE' })
+                .then(() => loadNewsAdmin());
+            }
+          });
+        });
+      });
+  }
+
+  document.getElementById('newsForm').addEventListener('submit', (e) => {
+    e.preventDefault();
+    const id = document.getElementById('editNewsId').value;
+    const title = document.getElementById('newsTitle').value;
+    const content = document.getElementById('newsContent').value;
+    const is_active = parseInt(document.getElementById('newsActive').value);
+    const url = id ? `/api/admin/news/${id}` : '/api/admin/news';
+    const method = id ? 'PUT' : 'POST';
+    fetch(url, {
+      method,
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ title, content, is_active })
+    })
+      .then(r => r.json())
+      .then(() => {
+        loadNewsAdmin();
+        document.getElementById('newsForm').reset();
+        document.getElementById('editNewsId').value = '';
+        document.getElementById('newsSubmitBtn').textContent = '➕ Добавить новость';
+      });
+  });
+
+  // ----- Настройки (админ) -----
+  function loadSettings() {
+    fetch('/api/settings')
+      .then(r => r.json())
+      .then(settings => {
+        document.getElementById('settingsAbout').value = settings.about_text || '';
+        document.getElementById('settingsAddress').value = settings.contacts_address || '';
+        document.getElementById('settingsPhone').value = settings.contacts_phone || '';
+        document.getElementById('settingsEmail').value = settings.contacts_email || '';
+        document.getElementById('settingsSchedule').value = settings.contacts_schedule || '';
+      });
+  }
+
+  document.getElementById('settingsForm').addEventListener('submit', (e) => {
+    e.preventDefault();
+    const data = {
+      about_text: document.getElementById('settingsAbout').value,
+      contacts_address: document.getElementById('settingsAddress').value,
+      contacts_phone: document.getElementById('settingsPhone').value,
+      contacts_email: document.getElementById('settingsEmail').value,
+      contacts_schedule: document.getElementById('settingsSchedule').value,
+    };
+    fetch('/api/admin/settings', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data)
+    })
+      .then(r => r.json())
+      .then(res => {
+        const msg = document.getElementById('settingsMessage');
+        if (res.success) {
+          msg.textContent = '✅ Настройки сохранены!';
+          msg.style.color = 'green';
+        } else {
+          msg.textContent = '❌ Ошибка: ' + (res.error || 'неизвестная');
+          msg.style.color = 'red';
+        }
+      })
+      .catch(() => {
+        document.getElementById('settingsMessage').textContent = 'Ошибка соединения';
+        document.getElementById('settingsMessage').style.color = 'red';
+      });
+  });
+
+  // ----- Дизайн (админ) -----
+  function loadBgPreview() {
+    fetch('/api/background')
+      .then(r => r.json())
+      .then(data => {
+        const preview = document.getElementById('bgPreview');
+        if (data.background) {
+          preview.innerHTML = `<img src="${data.background}" alt="Фон сайта">`;
+        } else {
+          preview.innerHTML = `<span class="empty">Фон не установлен</span>`;
+        }
+      })
+      .catch(() => {
+        document.getElementById('bgPreview').innerHTML = `<span class="empty">Ошибка загрузки</span>`;
+      });
+  }
+
+  document.getElementById('setBgUrlBtn').addEventListener('click', function() {
+    const url = document.getElementById('bgUrl').value.trim();
+    if (!url) { alert('Введите ссылку'); return; }
+    fetch('/api/admin/background', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url })
+    })
+      .then(r => r.json())
+      .then(data => {
+        const msg = document.getElementById('bgMessage');
+        if (data.success) {
+          msg.innerHTML = '<span style="color:green;">✅ Фон обновлён!</span>';
+          loadBgPreview();
+          document.getElementById('bgUrl').value = '';
+        } else {
+          msg.innerHTML = '<span style="color:red;">❌ Ошибка: ' + data.error + '</span>';
+        }
+      })
+      .catch(() => {
+        document.getElementById('bgMessage').innerHTML = '<span style="color:red;">❌ Ошибка соединения</span>';
+      });
+  });
+
+  document.getElementById('uploadBgBtn').addEventListener('click', function() {
+    const fileInput = document.getElementById('bgFile');
+    if (!fileInput.files[0]) { alert('Выберите файл'); return; }
+    const formData = new FormData();
+    formData.append('background', fileInput.files[0]);
+    fetch('/api/admin/upload-background', {
+      method: 'POST',
+      body: formData
+    })
+      .then(r => r.json())
+      .then(data => {
+        const msg = document.getElementById('bgMessage');
+        if (data.success) {
+          msg.innerHTML = '<span style="color:green;">✅ Фон загружен!</span>';
+          loadBgPreview();
+          document.getElementById('bgFile').value = '';
+        } else {
+          msg.innerHTML = '<span style="color:red;">❌ Ошибка: ' + data.error + '</span>';
+        }
+      })
+      .catch(() => {
+        document.getElementById('bgMessage').innerHTML = '<span style="color:red;">❌ Ошибка соединения</span>';
+      });
+  });
+
+  document.getElementById('removeBgBtn').addEventListener('click', function() {
+    if (!confirm('Удалить фоновое изображение?')) return;
+    fetch('/api/admin/background', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url: '' })
+    })
+      .then(r => r.json())
+      .then(data => {
+        const msg = document.getElementById('bgMessage');
+        if (data.success) {
+          msg.innerHTML = '<span style="color:green;">✅ Фон удалён</span>';
+          loadBgPreview();
+        } else {
+          msg.innerHTML = '<span style="color:red;">❌ Ошибка: ' + data.error + '</span>';
+        }
+      })
+      .catch(() => {
+        document.getElementById('bgMessage').innerHTML = '<span style="color:red;">❌ Ошибка соединения</span>';
+      });
+  });
+
+  // ----- Загрузка данных при старте (если админ уже залогинен) -----
+  if (panelDiv.classList.contains('active')) {
+    loadAll();
+    showTab('products');
+  }
+</script>
+</body>
+</html>

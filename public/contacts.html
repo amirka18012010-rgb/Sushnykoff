@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Контакты</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="container">
+  <header class="header">
+    <h1>🥤 <span>Drink</span>Store</h1>
+    <a href="/" class="admin-btn" style="background:#2c3e50; text-decoration:none;">🏠 На главную</a>
+  </header>
+  <div id="contactsContent" style="max-width:800px; margin:40px auto; padding:20px; background:white; border-radius:20px; box-shadow:0 4px 12px rgba(0,0,0,0.05);">
+    <h2>Контакты</h2>
+    <div id="contactsData">Загрузка...</div>
+  </div>
+</div>
+<script>
+  fetch('/api/settings')
+    .then(r => r.json())
+    .then(settings => {
+      const html = `
+        <p><strong>Адрес:</strong> ${settings.contacts_address || 'не указан'}</p>
+        <p><strong>Телефон:</strong> ${settings.contacts_phone || 'не указан'}</p>
+        <p><strong>Email:</strong> ${settings.contacts_email || 'не указан'}</p>
+        <p><strong>График работы:</strong> ${settings.contacts_schedule || 'не указан'}</p>
+      `;
+      document.getElementById('contactsData').innerHTML = html;
+    })
+    .catch(() => document.getElementById('contactsData').textContent = 'Ошибка загрузки данных.');
+</script>
+</body>
+</html>

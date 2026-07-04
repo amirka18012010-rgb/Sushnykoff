@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Мои заказы</title>
+  <link rel="stylesheet" href="style.css">
+  <style>
+    .profile-container {
+      max-width: 900px;
+      margin: 40px auto;
+      padding: 20px;
+      background: white;
+      border-radius: 20px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+    }
+    .order-item {
+      border-bottom: 1px solid #ecf0f1;
+      padding: 15px 0;
+    }
+    .order-item .header {
+      display: flex;
+      justify-content: space-between;
+      font-weight: 600;
+    }
+    .order-item .status {
+      padding: 4px 12px;
+      border-radius: 20px;
+      font-size: 14px;
+    }
+    .status-pending { background: #f39c12; color: white; }
+    .status-paid { background: #27ae60; color: white; }
+    .status-shipped { background: #3498db; color: white; }
+    .status-delivered { background: #2c3e50; color: white; }
+    .order-items-list {
+      margin: 10px 0;
+      font-size: 14px;
+      color: #2c3e50;
+    }
+    .clear-history-btn {
+      background: #e74c3c;
+      color: white;
+      border: none;
+      padding: 10px 20px;
+      border-radius: 50px;
+      font-weight: 600;
+      cursor: pointer;
+      margin-top: 20px;
+    }
+    .clear-history-btn:hover {
+      background: #c0392b;
+    }
+    .actions {
+      display: flex;
+      gap: 15px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+  </style>
+</head>
+<body>
+<div class="container">
+  <header class="header">
+    <h1>🥤 <span>Drink</span>Store</h1>
+    <div class="header-actions">
+      <a href="/" class="admin-btn" style="background:#2c3e50; text-decoration:none;">🏠 На главную</a>
+      <button id="logoutBtn" class="admin-btn" style="background:#e74c3c;">Выйти</button>
+    </div>
+  </header>
+
+  <div class="profile-container">
+    <h2>📋 Мои заказы</h2>
+    <div id="ordersHistory"></div>
+    <div class="actions">
+      <button id="clearHistoryBtn" class="clear-history-btn">🗑️ Очистить историю</button>
+    </div>
+  </div>
+</div>
+
+<script>
+  fetch('/api/auth/me')
+    .then(res => res.json())
+    .then(data => {
+      if (!data.user) {
+        window.location.href = '/';
+        return;
+      }
+      loadOrders();
+    });
+
+  function loadOrders() {
+    fetch('/api/orders/history')
+      .then(res => res.json())
+      .then(orders => {
+        const container = document.getElementById('ordersHistory');
+        if (orders.length === 0) {
+          container.innerHTML = '<p>У вас пока нет заказов.</p>';
+          return;
+        }
+        container.innerHTML = orders.map(order => {
+          const items = JSON.parse(order.items);
+          const itemsHtml = items.map(item =>
+            `${item.name} × ${item.quantity} = ${item.price * item.quantity} ₽`
+          ).join(', ');
+          const statusClass = `status-${order.status}`;
+          return `
+            <div class="order-item">
+              <div class="header">
+                <span>Заказ №${order.id}</span>
+                <span class="status ${statusClass}">${order.status === 'pending' ? 'Ожидает' : order.status === 'paid' ? 'Оплачен' : order.status === 'shipped' ? 'Отправлен' : 'Доставлен'}</span>
+              </div>
+              <div class="order-items-list">${itemsHtml}</div>
+              <div style="font-weight:600;">Итого: ${order.total} ₽</div>
+              <div style="font-size:14px; color:#7f8c8d;">${new Date(order.created_at).toLocaleString()}</div>
+            </div>
+          `;
+        }).join('');
+      });
+  }
+
+  document.getElementById('clearHistoryBtn').addEventListener('click', function() {
+    if (!confirm('Вы уверены, что хотите удалить всю историю заказов? Это действие необратимо.')) {
+      return;
+    }
+    fetch('/api/orders/history', {
+      method: 'DELETE'
+    })
+      .then(res => res.json())
+      .then(data => {
+        if (data.success) {
+          alert(`Удалено ${data.deleted} заказов.`);
+          loadOrders();
+        } else {
+          alert('Ошибка при удалении: ' + (data.error || 'неизвестная ошибка'));
+        }
+      })
+      .catch(err => alert('Ошибка соединения: ' + err.message));
+  });
+
+  document.getElementById('logoutBtn').addEventListener('click', () => {
+    fetch('/api/auth/logout', { method: 'POST' })
+      .then(() => window.location.href = '/');
+  });
+</script>
+</body>
+</html>
