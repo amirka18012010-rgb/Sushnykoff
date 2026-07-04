@@ -637,3 +637,109 @@ body.has-bg .side-header {
     padding: 4px 0;
   }
 }
+
+/* ===== БУРГЕР-МЕНЮ (ГАРАНТИРОВАННО ПОВЕРХ ВСЕГО) ===== */
+.burger-wrapper {
+  position: fixed;
+  top: 20px;
+  right: 20px;
+  z-index: 999999 !important;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+}
+
+.burger-btn {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-around;
+  width: 30px;
+  height: 26px;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+  z-index: 999999 !important;
+}
+.burger-btn span {
+  display: block;
+  width: 100%;
+  height: 3px;
+  background: #2c3e50;
+  border-radius: 3px;
+  transition: all 0.3s ease;
+}
+.burger-btn.active span:nth-child(1) {
+  transform: rotate(45deg) translate(5px, 6px);
+}
+.burger-btn.active span:nth-child(2) {
+  opacity: 0;
+}
+.burger-btn.active span:nth-child(3) {
+  transform: rotate(-45deg) translate(5px, -6px);
+}
+
+.burger-menu {
+  display: none;
+  position: fixed;
+  top: 70px;
+  right: 20px;
+  background: white;
+  border-radius: 16px;
+  box-shadow: 0 8px 30px rgba(0,0,0,0.15);
+  padding: 8px 0;
+  min-width: 180px;
+  z-index: 999999 !important;
+  backdrop-filter: blur(8px);
+  background: rgba(255,255,255,0.95);
+  border: 1px solid rgba(255,255,255,0.2);
+}
+.burger-menu.open {
+  display: block !important;
+}
+
+.burger-menu a {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 20px;
+  color: #2c3e50;
+  text-decoration: none;
+  transition: background 0.2s;
+  font-weight: 500;
+}
+.burger-menu a:hover {
+  background: #f0f2f5;
+}
+.burger-menu a.whatsapp-link-burger {
+  color: #25D366;
+}
+.burger-menu a.whatsapp-link-burger:hover {
+  background: #25D366;
+  color: white;
+}
+
+@media (max-width: 480px) {
+  .burger-wrapper {
+    top: 10px;
+    right: 10px;
+  }
+  .burger-menu {
+    top: 60px;
+    right: 10px;
+    min-width: 150px;
+  }
+}
+
+/* Адаптация для маленьких экранов */
+@media (max-width: 480px) {
+  .burger-wrapper {
+    margin-left: 0;
+  }
+  .burger-menu {
+    top: 70px;
+    right: 10px;
+    min-width: 150px;
+  }
+}
+

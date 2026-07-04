@@ -1,5 +1,7 @@
+// ===== Глобальные переменные =====
 let products = [], cart = [], currentUser = null, currentPage = 1, totalPages = 1, favorites = [];
 
+// ===== DOM-элементы =====
 const productsGrid = document.getElementById('productsGrid');
 const categoryFilter = document.getElementById('categoryFilter');
 const searchInput = document.getElementById('searchInput');
@@ -24,7 +26,41 @@ const newsOverlay = document.getElementById('newsOverlay');
 const closeNewsBtn = document.getElementById('closeNewsBtn');
 const newsCloseBtn = document.getElementById('newsCloseBtn');
 
-// ----- Загрузка категорий -----
+// ===== БУРГЕР-МЕНЮ =====
+const burgerBtn = document.getElementById('burgerBtn');
+const burgerMenu = document.getElementById('burgerMenu');
+
+if (burgerBtn && burgerMenu) {
+  burgerBtn.addEventListener('click', function(e) {
+    e.stopPropagation();
+    this.classList.toggle('active');
+    burgerMenu.classList.toggle('open');
+  });
+
+  document.addEventListener('click', function(e) {
+    const target = e.target;
+    if (
+      burgerBtn.contains(target) ||
+      burgerMenu.contains(target) ||
+      target.closest('#searchInput') ||
+      target.closest('.filter-section') ||
+      target.closest('.reset-btn')
+    ) {
+      return;
+    }
+    burgerBtn.classList.remove('active');
+    burgerMenu.classList.remove('open');
+  });
+
+  burgerMenu.querySelectorAll('a').forEach(link => {
+    link.addEventListener('click', function() {
+      burgerBtn.classList.remove('active');
+      burgerMenu.classList.remove('open');
+    });
+  });
+}
+
+// ===== Загрузка категорий =====
 function loadCategories() {
   fetch('/api/categories')
     .then(res => res.json())
@@ -40,7 +76,7 @@ function loadCategories() {
     .catch(err => console.error('Ошибка загрузки категорий:', err));
 }
 
-// ----- Загрузка товаров с пагинацией -----
+// ===== Загрузка товаров с пагинацией =====
 function loadProducts(page = 1) {
   const category = categoryFilter.value;
   const search = searchInput.value.trim();
@@ -117,7 +153,7 @@ function renderPagination() {
   });
 }
 
-// ----- Избранное -----
+// ===== Избранное =====
 function loadFavorites() {
   if (!currentUser) return;
   fetch('/api/favorites')
@@ -147,7 +183,7 @@ function toggleFavorite(productId) {
     .catch(err => console.error('Ошибка избранного:', err));
 }
 
-// ----- Новости -----
+// ===== Новости =====
 function checkNews() {
   fetch('/api/news/latest')
     .then(res => res.json())
@@ -173,56 +209,57 @@ if (newsOverlay) {
   });
 }
 
-// ----- Аутентификация -----
+// ===== Аутентификация =====
 function loadUser() {
   fetch('/api/auth/me')
     .then(res => res.json())
     .then(data => {
       if (data.user) {
         currentUser = data.user;
-        const authBtns = document.getElementById('authButtons');
-        const userInfoDiv = document.getElementById('userInfo');
-        const userNameSpan = document.getElementById('userName');
-        if (authBtns) authBtns.style.display = 'none';
-        if (userInfoDiv) userInfoDiv.style.display = 'flex';
-        if (userNameSpan) userNameSpan.textContent = `${data.user.first_name} ${data.user.last_name}`;
+        document.getElementById('authButtons').style.display = 'none';
+        document.getElementById('userInfo').style.display = 'flex';
+        document.getElementById('userName').textContent = `${data.user.first_name} ${data.user.last_name}`;
+        // === ПРОВЕРКА АДМИНА ===
         checkAdminStatus();
         loadFavorites();
         checkNews();
       } else {
         currentUser = null;
-        const authBtns = document.getElementById('authButtons');
-        const userInfoDiv = document.getElementById('userInfo');
-        const adminLink = document.getElementById('adminLink');
-        if (authBtns) authBtns.style.display = 'flex';
-        if (userInfoDiv) userInfoDiv.style.display = 'none';
-        if (adminLink) adminLink.style.display = 'none';
+        document.getElementById('authButtons').style.display = 'flex';
+        document.getElementById('userInfo').style.display = 'none';
+        document.getElementById('adminLink').style.display = 'none';
       }
     })
     .catch(err => console.error('Ошибка загрузки пользователя:', err));
 }
 
+// ===== Проверка статуса администратора =====
 function checkAdminStatus() {
   fetch('/api/admin/status')
     .then(res => res.json())
     .then(data => {
+      console.log('🔍 Статус админа:', data);
       const adminLink = document.getElementById('adminLink');
       if (adminLink) {
         if (data.isAdmin) {
           adminLink.style.display = 'flex';
-          console.log('✅ Кнопка админки показана');
+          console.log('✅ Кнопка админки ПОКАЗАНА');
         } else {
           adminLink.style.display = 'none';
+          console.log('❌ Кнопка админки скрыта');
         }
+      } else {
+        console.warn('⚠️ Элемент #adminLink не найден в DOM');
       }
     })
-    .catch(() => {
+    .catch(err => {
+      console.error('❌ Ошибка проверки статуса админа:', err);
       const adminLink = document.getElementById('adminLink');
       if (adminLink) adminLink.style.display = 'none';
     });
 }
 
-// ----- Вход -----
+// ===== Вход =====
 const loginBtn = document.getElementById('loginBtn');
 const closeLoginBtn = document.getElementById('closeLoginBtn');
 const loginForm = document.getElementById('loginForm');
@@ -268,7 +305,7 @@ if (loginForm) {
   });
 }
 
-// ----- Регистрация -----
+// ===== Регистрация =====
 const registerBtn = document.getElementById('registerBtn');
 const closeRegisterBtn = document.getElementById('closeRegisterBtn');
 const registerForm = document.getElementById('registerForm');
@@ -318,7 +355,7 @@ if (registerForm) {
   });
 }
 
-// ----- Выход -----
+// ===== Выход =====
 const logoutBtn = document.getElementById('logoutBtn');
 if (logoutBtn) {
   logoutBtn.addEventListener('click', () => {
@@ -330,14 +367,122 @@ if (logoutBtn) {
   });
 }
 
-// ----- Восстановление -----
-// (оставляем как есть, уже было)
+// ===== Восстановление =====
+const forgotLoginBtn = document.getElementById('forgotLoginBtn');
+const forgotPasswordBtn = document.getElementById('forgotPasswordBtn');
+const recoverOverlay = document.getElementById('recoverOverlay');
+const closeRecoverBtn = document.getElementById('closeRecoverBtn');
+const recoverFirstName = document.getElementById('recoverFirstName');
+const recoverLastName = document.getElementById('recoverLastName');
+const recoverSearchBtn = document.getElementById('recoverSearchBtn');
+const recoverStep1 = document.getElementById('recoverStep1');
+const recoverStep2 = document.getElementById('recoverStep2');
+const recoveredLogin = document.getElementById('recoveredLogin');
+const recoverNewPassword = document.getElementById('recoverNewPassword');
+const recoverResetBtn = document.getElementById('recoverResetBtn');
+const recoverMessage = document.getElementById('recoverMessage');
+const recoverError = document.getElementById('recoverError');
 
-// ----- Корзина -----
+if (forgotLoginBtn) {
+  forgotLoginBtn.addEventListener('click', () => {
+    if (loginOverlayElem) loginOverlayElem.classList.remove('open');
+    if (recoverOverlay) recoverOverlay.classList.add('open');
+    if (recoverStep1) recoverStep1.style.display = 'block';
+    if (recoverStep2) recoverStep2.style.display = 'none';
+    if (recoverMessage) recoverMessage.textContent = '';
+    if (recoverError) recoverError.textContent = '';
+  });
+}
+if (forgotPasswordBtn) {
+  forgotPasswordBtn.addEventListener('click', () => {
+    if (loginOverlayElem) loginOverlayElem.classList.remove('open');
+    if (recoverOverlay) recoverOverlay.classList.add('open');
+    if (recoverStep1) recoverStep1.style.display = 'block';
+    if (recoverStep2) recoverStep2.style.display = 'none';
+    if (recoverMessage) recoverMessage.textContent = '';
+    if (recoverError) recoverError.textContent = '';
+  });
+}
+if (closeRecoverBtn) {
+  closeRecoverBtn.addEventListener('click', () => {
+    if (recoverOverlay) recoverOverlay.classList.remove('open');
+  });
+}
+if (recoverSearchBtn) {
+  recoverSearchBtn.addEventListener('click', () => {
+    const firstName = recoverFirstName.value;
+    const lastName = recoverLastName.value;
+    if (!firstName || !lastName) {
+      if (recoverError) recoverError.textContent = 'Введите имя и фамилию';
+      return;
+    }
+    fetch('/api/auth/recover-login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ firstName, lastName })
+    })
+      .then(res => res.json())
+      .then(data => {
+        if (data.login) {
+          if (recoveredLogin) recoveredLogin.textContent = data.login;
+          if (recoverStep1) recoverStep1.style.display = 'none';
+          if (recoverStep2) recoverStep2.style.display = 'block';
+          if (recoverError) recoverError.textContent = '';
+          if (recoverMessage) recoverMessage.textContent = '';
+        } else {
+          if (recoverError) recoverError.textContent = data.error || 'Пользователь не найден';
+        }
+      })
+      .catch(() => {
+        if (recoverError) recoverError.textContent = 'Ошибка соединения';
+      });
+  });
+}
+if (recoverResetBtn) {
+  recoverResetBtn.addEventListener('click', () => {
+    const firstName = recoverFirstName.value;
+    const lastName = recoverLastName.value;
+    const login = recoveredLogin ? recoveredLogin.textContent : '';
+    const newPassword = recoverNewPassword.value;
+    if (!newPassword) {
+      if (recoverError) recoverError.textContent = 'Введите новый пароль';
+      return;
+    }
+    fetch('/api/auth/reset-password', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ firstName, lastName, login, newPassword })
+    })
+    .then(res => res.json())
+    .then(data => {
+      if (data.success) {
+        if (recoverMessage) recoverMessage.textContent = 'Пароль успешно изменён!';
+        if (recoverError) recoverError.textContent = '';
+        setTimeout(() => {
+          if (recoverOverlay) recoverOverlay.classList.remove('open');
+          if (recoverStep2) recoverStep2.style.display = 'none';
+          if (recoverStep1) recoverStep1.style.display = 'block';
+          if (recoverNewPassword) recoverNewPassword.value = '';
+          if (recoverMessage) recoverMessage.textContent = '';
+        }, 2000);
+      } else {
+        if (recoverError) recoverError.textContent = data.error || 'Ошибка сброса пароля';
+      }
+    })
+    .catch(() => {
+      if (recoverError) recoverError.textContent = 'Ошибка соединения';
+    });
+  });
+}
+
+// ===== Корзина =====
 function loadCart() {
   fetch('/api/cart')
     .then(res => res.json())
-    .then(data => { cart = data; updateCartUI(); })
+    .then(data => {
+      cart = data;
+      updateCartUI();
+    })
     .catch(err => console.error('Ошибка загрузки корзины:', err));
 }
 
@@ -369,7 +514,7 @@ function removeFromCart(productId) {
 
 function updateCartUI() {
   if (!cartItems || !cartTotal || !cartCount) {
-    console.warn('Элементы корзины не найдены');
+    console.warn('Элементы корзины не найдены в DOM');
     return;
   }
 
@@ -432,7 +577,7 @@ function updateCartUI() {
     .catch(err => console.error('Ошибка обновления корзины:', err));
 }
 
-// ----- Оформление заказа -----
+// ===== Оформление заказа =====
 if (checkoutBtn) {
   checkoutBtn.addEventListener('click', async () => {
     if (cart.length === 0) {
@@ -440,8 +585,8 @@ if (checkoutBtn) {
       return;
     }
     if (!currentUser) {
-      const loginOverlayElem2 = document.getElementById('loginOverlay');
-      if (loginOverlayElem2) loginOverlayElem2.classList.add('open');
+      const loginOverlay2 = document.getElementById('loginOverlay');
+      if (loginOverlay2) loginOverlay2.classList.add('open');
       return;
     }
     try {
@@ -460,7 +605,7 @@ if (checkoutBtn) {
   });
 }
 
-// ----- Открытие/закрытие корзины -----
+// ===== Открытие/закрытие корзины =====
 function openCart() {
   if (cartOverlay) cartOverlay.classList.add('open');
   document.body.style.overflow = 'hidden';
@@ -478,7 +623,7 @@ if (cartOverlay) {
   });
 }
 
-// ----- Фильтр и поиск -----
+// ===== Фильтр и поиск =====
 if (categoryFilter) categoryFilter.addEventListener('change', () => loadProducts(1));
 if (resetFilterBtn) {
   resetFilterBtn.addEventListener('click', () => {
@@ -499,7 +644,7 @@ function debounce(fn, delay) {
   };
 }
 
-// ----- Закрытие модалок по клику вне -----
+// ===== Закрытие модалок по клику вне =====
 [document.getElementById('loginOverlay'), document.getElementById('registerOverlay'), document.getElementById('recoverOverlay'), document.getElementById('notifOverlay')].forEach(overlay => {
   if (overlay) {
     overlay.addEventListener('click', (e) => {
@@ -510,13 +655,13 @@ function debounce(fn, delay) {
   }
 });
 
-// ----- Уведомления -----
+// ===== Уведомления =====
 let notifications = [];
 let notifInterval = null;
 
 function loadNotifications() {
   fetch('/api/notifications')
-    .then(r => r.json())
+    .then(res => res.json())
     .then(data => {
       notifications = data;
       updateNotifBadge();
@@ -539,7 +684,7 @@ function updateNotifBadge() {
 
 function markAllRead() {
   fetch('/api/notifications/read', { method: 'POST' })
-    .then(r => r.json())
+    .then(res => res.json())
     .then(data => {
       if (data.success) {
         notifications = [];
@@ -598,10 +743,10 @@ function startNotifPolling() {
 }
 startNotifPolling();
 
-// ----- Фон -----
+// ===== Фон =====
 function applyBackground() {
   fetch('/api/background')
-    .then(r => r.json())
+    .then(res => res.json())
     .then(data => {
       if (data.background) {
         document.body.style.backgroundImage = `url(${data.background})`;
@@ -617,9 +762,14 @@ function applyBackground() {
     .catch(err => console.error('Ошибка загрузки фона:', err));
 }
 
-// ----- Инициализация -----
+// ===== ИНИЦИАЛИЗАЦИЯ =====
 loadCategories();
 loadProducts();
 loadCart();
 loadUser();
 applyBackground();
+
+// === ДОПОЛНИТЕЛЬНАЯ ПРОВЕРКА АДМИН-СТАТУСА (через 2 секунды) ===
+setTimeout(checkAdminStatus, 2000);
+
+console.log('✅ Скрипт загружен. Все функции активны.');
