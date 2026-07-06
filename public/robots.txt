@@ -1,0 +1,11 @@
+User-agent: *
+Allow: /
+
+# Запрещаем индексировать админку и служебные файлы
+Disallow: /admin.html
+Disallow: /admin/
+Disallow: /db/
+Disallow: /uploads/
+
+# Указываем путь к карте сайта
+Sitemap: https://sushnykoff.onrender.com/sitemap.xml
