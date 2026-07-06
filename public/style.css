@@ -743,3 +743,40 @@ body.has-bg .side-header {
   }
 }
 
+/* ===== ХЛЕБНЫЕ КРОШКИ ===== */
+.breadcrumbs {
+  padding: 8px 0 16px 0;
+  font-size: 14px;
+  color: #7f8c8d;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.breadcrumbs a {
+  color: #3498db;
+  text-decoration: none;
+  transition: color 0.2s;
+}
+.breadcrumbs a:hover {
+  color: #2980b9;
+  text-decoration: underline;
+}
+
+.breadcrumbs .separator {
+  color: #bdc3c7;
+  margin: 0 4px;
+}
+
+.breadcrumbs .current {
+  color: #2c3e50;
+  font-weight: 600;
+}
+
+@media (max-width: 480px) {
+  .breadcrumbs {
+    font-size: 12px;
+    padding: 6px 0 12px 0;
+  }
+}

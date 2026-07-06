@@ -670,4 +670,92 @@ applyBackground();
 
 setTimeout(checkAdminStatus, 2000);
 
+// ===== НАВИГАЦИОННАЯ ЦЕПОЧКА =====
+function updateBreadcrumbs() {
+  const container = document.getElementById('breadcrumbs');
+  if (!container) return;
+
+  const path = window.location.pathname;
+  const page = path.split('/').pop() || 'index.html';
+  const params = new URLSearchParams(window.location.search);
+  let crumbs = [];
+
+  // Главная всегда есть
+  crumbs.push({ name: 'Главная', url: '/' });
+
+  // Определяем страницу
+  if (page === 'index.html' || page === '' || page === '/') {
+    // На главной показываем только "Главная"
+    crumbs = crumbs.slice(0, 1);
+  } else if (page === 'product.html') {
+    const productId = params.get('id');
+    if (productId) {
+      // Пытаемся получить название товара из глобальной переменной products
+      const product = products.find(p => p.id == productId);
+      const productName = product ? product.name : 'Товар';
+      crumbs.push({ name: productName, url: null });
+    } else {
+      crumbs.push({ name: 'Товар', url: null });
+    }
+  } else if (page === 'about.html') {
+    crumbs.push({ name: 'О нас', url: null });
+  } else if (page === 'contacts.html') {
+    crumbs.push({ name: 'Контакты', url: null });
+  } else if (page === 'map.html') {
+    crumbs.push({ name: 'Карта', url: null });
+  } else if (page === 'profile.html') {
+    crumbs.push({ name: 'Профиль', url: null });
+  } else {
+    // Для остальных страниц (например, admin.html) ничего не показываем
+    container.innerHTML = '';
+    return;
+  }
+
+  // Генерируем HTML
+  let html = '';
+  crumbs.forEach((crumb, index) => {
+    if (index > 0) {
+      html += `<span class="separator">›</span>`;
+    }
+    if (crumb.url) {
+      html += `<a href="${crumb.url}">${crumb.name}</a>`;
+    } else {
+      html += `<span class="current">${crumb.name}</span>`;
+    }
+  });
+
+  container.innerHTML = html;
+}
+
+// Вызываем при загрузке и после обновления товаров (для product.html)
+document.addEventListener('DOMContentLoaded', updateBreadcrumbs);
+
+// Если на странице product.html, обновим крошки после загрузки товара
+// Для этого добавим вызов в функцию, которая загружает товар (если она есть)
+// В вашем script.js уже есть loadProduct, но для надёжности добавим перехват:
+if (window.location.pathname.includes('product.html')) {
+  // Если есть функция loadProduct, она уже вызывает renderProduct, можем добавить вызов updateBreadcrumbs в неё
+  // Но проще добавить обработчик MutationObserver или просто вызывать после загрузки данных
+  // Однако мы можем переопределить renderProduct или добавить в неё вызов.
+  // Так как мы не знаем точно, где у вас загружается товар, я предлагаю просто вызывать updateBreadcrumbs
+  // после того, как данные товара загружены — например, в loadProduct добавить:
+  // updateBreadcrumbs();
+  // Но чтобы не ломать существующий код, я добавлю прослушку события загрузки страницы и проверку каждые 500 мс,
+  // но это плохо. Лучше изменить loadProduct в вашем script.js.
+  // Поэтому я дам инструкцию: в файле product.html после загрузки товара вызвать updateBreadcrumbs().
+  // Или добавим в script.js глобально:
+  // Если на странице есть функция loadProduct, мы можем её обернуть.
+  // Давайте сделаем так: добавим в конец скрипта проверку, и если есть функция loadProduct — переопределим её.
+  if (typeof loadProduct === 'function') {
+    const originalLoadProduct = loadProduct;
+    loadProduct = function() {
+      originalLoadProduct.apply(this, arguments);
+      setTimeout(updateBreadcrumbs, 100); // даём время на обновление DOM
+    };
+  }
+}
+
+// Также обновляем при изменении URL (для SPA, если есть)
+window.addEventListener('popstate', updateBreadcrumbs);
+
 console.log('✅ Скрипт загружен. Все функции активны.');

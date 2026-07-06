@@ -63,6 +63,8 @@
       <a href="/" class="admin-btn" style="background:#2c3e50; text-decoration:none;">🏠 На главную</a>
     </div>
   </header>
+  <!-- Навигационная цепочка -->
+  <div class="breadcrumbs" id="breadcrumbs"></div>
 
   <div class="product-container" id="productContainer">
     <div id="productDetails"></div>
@@ -108,6 +110,8 @@
           <button class="add-btn" data-id="${product.id}">➕ Добавить в корзину</button>
         `;
         document.getElementById('productDetails').innerHTML = html;
+        // После отображения товара
+        updateBreadcrumbs();
         document.querySelector('.add-btn').addEventListener('click', function() {
           addToCart(parseInt(this.dataset.id));
         });
