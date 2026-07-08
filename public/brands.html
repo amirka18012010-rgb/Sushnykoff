@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Бренды и товары — Sushnykoff</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="container">
+  <header class="header">
+    <a href="/" style="text-decoration:none; color:inherit;">
+      <h1>🥤 <span>Sushnykoff</span></h1>
+    </a>
+    <div class="header-actions">
+      <button class="cart-btn" id="openCartBtn">🛒 <span class="badge" id="cartCount">0</span></button>
+      <div id="authButtons">
+        <button id="loginBtn" class="admin-btn">Войти</button>
+        <button id="registerBtn" class="admin-btn">Регистрация</button>
+      </div>
+      <div id="userInfo" style="display:none;">
+        <span id="userName"></span>
+        <a href="/profile.html" class="admin-btn">👤 Профиль</a>
+        <button id="logoutBtn" class="admin-btn">Выйти</button>
+      </div>
+      <a href="admin.html" class="admin-btn" id="adminLink" style="display:none;">⚙️ Админка</a>
+    </div>
+  </header>
+
+  <div class="burger-wrapper">
+    <button class="burger-btn" id="burgerBtn">☰</button>
+    <div class="burger-menu" id="burgerMenu">
+      <a href="/">Главная</a>
+      <a href="/about.html">О нас</a>
+      <a href="/contacts.html">Контакты</a>
+      <a href="/map.html">Карта</a>
+      <a href="/profile.html">Профиль</a>
+      <a href="https://wa.me/79889369730" target="_blank">💬 WhatsApp</a>
+    </div>
+  </div>
+
+  <h2 class="page-title" id="categoryTitle">Бренды и товары</h2>
+
+  <!-- Фильтр и поиск на странице брендов -->
+  <div class="filter-section">
+    <input type="text" id="brandsSearchInput" placeholder="🔍 Поиск по товарам категории..." style="flex:1; min-width:200px; padding:10px 20px; border:2px solid rgba(255,255,255,0.3); border-radius:30px; outline:none; font-size:15px; background:rgba(255,255,255,0.5); backdrop-filter:blur(5px);">
+    <button class="reset-btn" id="brandsResetSearchBtn">Сбросить</button>
+  </div>
+
+  <!-- Сетка брендов (4 в строку) -->
+  <div class="brands-grid" id="brandsGrid"></div>
+
+  <!-- Товары категории -->
+  <div class="products-grid" id="productsGrid"></div>
+  <div class="pagination" id="pagination"></div>
+</div>
+
+<script src="script.js"></script>
+</body>
+</html>

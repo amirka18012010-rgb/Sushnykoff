@@ -1,12 +1,19 @@
-// ===== Глобальные переменные =====
+// ============================================================
+// ГЛОБАЛЬНЫЕ ПЕРЕМЕННЫЕ
+// ============================================================
 let products = [], cart = [], currentUser = null, currentPage = 1, totalPages = 1, favorites = [];
+let currentBrandId = null, currentVolumeId = null;
 
-// ===== DOM-элементы с проверкой =====
+// ============================================================
+// DOM-ЭЛЕМЕНТЫ
+// ============================================================
 const productsGrid = document.getElementById('productsGrid');
 const categoryFilter = document.getElementById('categoryFilter');
 const searchInput = document.getElementById('searchInput');
 const resetFilterBtn = document.getElementById('resetFilterBtn');
 const pagination = document.getElementById('pagination');
+const categoriesGrid = document.getElementById('categoriesGrid');
+
 const cartOverlay = document.getElementById('cartOverlay');
 const openCartBtn = document.getElementById('openCartBtn');
 const closeCartBtn = document.getElementById('closeCartBtn');
@@ -26,7 +33,9 @@ const newsOverlay = document.getElementById('newsOverlay');
 const closeNewsBtn = document.getElementById('closeNewsBtn');
 const newsCloseBtn = document.getElementById('newsCloseBtn');
 
-// ===== БУРГЕР =====
+// ============================================================
+// БУРГЕР-МЕНЮ
+// ============================================================
 const burgerBtn = document.getElementById('burgerBtn');
 const burgerMenu = document.getElementById('burgerMenu');
 
@@ -60,40 +69,215 @@ if (burgerBtn && burgerMenu) {
   });
 }
 
-// ===== Загрузка категорий =====
+// ============================================================
+// НОВАЯ СТРУКТУРА: КАТЕГОРИИ, БРЕНДЫ, ОБЪЁМЫ
+// ============================================================
+
 function loadCategories() {
-  if (!categoryFilter) {
-    console.error('Элемент categoryFilter не найден');
-    return;
-  }
+  if (!categoriesGrid) return;
   fetch('/api/categories')
     .then(res => res.json())
     .then(cats => {
-      categoryFilter.innerHTML = '<option value="all">Все</option>';
-      cats.forEach(c => {
-        const opt = document.createElement('option');
-        opt.value = c.id;
-        opt.textContent = c.name;
-        categoryFilter.appendChild(opt);
+      if (!cats.length) {
+        categoriesGrid.innerHTML = '<p>Категории не загружены</p>';
+        return;
+      }
+      categoriesGrid.innerHTML = cats.map(c => {
+        // Если есть картинка — показываем её, иначе иконку
+        const content = c.image
+          ? `<img class="category-img" src="${c.image}" alt="${c.name}">`
+          : `<div class="category-icon">${c.icon || '📂'}</div>`;
+        return `
+          <div class="category-card" data-id="${c.id}">
+            ${content}
+            <div class="category-info">
+              <div class="name">${c.name}</div>
+            </div>
+          </div>
+        `;
+      }).join('');
+      document.querySelectorAll('.category-card').forEach(el => {
+        el.addEventListener('click', function() {
+          const id = this.dataset.id;
+          window.location.href = `/brands.html?category=${id}`;
+        });
       });
     })
     .catch(err => console.error('Ошибка загрузки категорий:', err));
 }
 
-// ===== Загрузка товаров =====
-function loadProducts(page = 1) {
-  if (!categoryFilter || !searchInput) {
-    console.error('categoryFilter или searchInput не найдены');
-    return;
+// ---- Страница brands.html ----
+if (window.location.pathname.includes('brands.html')) {
+  const params = new URLSearchParams(window.location.search);
+  const categoryId = params.get('category');
+  if (categoryId) {
+    document.addEventListener('DOMContentLoaded', function() {
+      // Загружаем название категории
+      fetch('/api/categories')
+        .then(r => r.json())
+        .then(cats => {
+          const cat = cats.find(c => c.id == categoryId);
+          document.getElementById('categoryTitle').textContent = cat ? `Товары и бренды в категории «${cat.name}»` : 'Бренды и товары';
+        });
+      // Загружаем бренды
+      loadBrands(categoryId);
+      // Загружаем товары категории (с пагинацией и поиском)
+      loadBrandsCategoryProducts(categoryId);
+      // Событие поиска
+      const searchInput = document.getElementById('brandsSearchInput');
+      const resetBtn = document.getElementById('brandsResetSearchBtn');
+      if (searchInput) {
+        searchInput.addEventListener('input', debounce(() => {
+          loadBrandsCategoryProducts(categoryId);
+        }, 300));
+      }
+      if (resetBtn) {
+        resetBtn.addEventListener('click', () => {
+          if (searchInput) searchInput.value = '';
+          loadBrandsCategoryProducts(categoryId);
+        });
+      }
+    });
   }
-  const category = categoryFilter.value;
-  const search = searchInput.value.trim();
+}
+
+function loadBrands(categoryId) {
+  fetch(`/api/brands?categoryId=${categoryId}`)
+    .then(res => res.json())
+    .then(brands => {
+      const grid = document.getElementById('brandsGrid');
+      if (!grid) return;
+      if (!brands.length) {
+        grid.innerHTML = '<p>Брендов в этой категории пока нет.</p>';
+        return;
+      }
+      grid.innerHTML = brands.map(b => `
+        <div class="brand-card" data-id="${b.id}">
+          ${b.image ? `<img src="${b.image}" alt="${b.name}">` : '<div class="placeholder">📦</div>'}
+          <div class="name">${b.name}</div>
+        </div>
+      `).join('');
+      document.querySelectorAll('.brand-card').forEach(el => {
+        el.addEventListener('click', function() {
+          const id = this.dataset.id;
+          window.location.href = `/brand.html?id=${id}`;
+        });
+      });
+    });
+}
+
+// ---- Функция загрузки товаров категории (для brands.html) ----
+function loadBrandsCategoryProducts(categoryId) {
+  const search = document.getElementById('brandsSearchInput') ? document.getElementById('brandsSearchInput').value.trim() : '';
+  const url = new URL('/api/products', window.location.origin);
+  url.searchParams.append('category', categoryId);
+  if (search) url.searchParams.append('search', search);
+  url.searchParams.append('page', currentPage);
+  url.searchParams.append('limit', 12);
+  fetch(url)
+    .then(res => res.json())
+    .then(data => {
+      products = data.items || [];
+      totalPages = data.totalPages || 1;
+      currentPage = data.page || 1;
+      renderProducts();
+      renderPagination();
+    })
+    .catch(err => console.error('Ошибка загрузки товаров категории:', err));
+}
+
+// ---- Страница brand.html ----
+if (window.location.pathname.includes('brand.html')) {
+  const params = new URLSearchParams(window.location.search);
+  const brandId = params.get('id');
+  if (brandId) {
+    currentBrandId = brandId;
+    document.addEventListener('DOMContentLoaded', function() {
+      loadBrand(brandId);
+      loadProductsForBrand(brandId);
+      // Поиск по товарам бренда
+      const searchInput = document.getElementById('brandSearchInput');
+      const resetBtn = document.getElementById('brandResetSearchBtn');
+      if (searchInput) {
+        searchInput.addEventListener('input', debounce(() => {
+          const search = searchInput.value.trim();
+          loadProductsForBrand(brandId, currentVolumeId, search);
+        }, 300));
+      }
+      if (resetBtn) {
+        resetBtn.addEventListener('click', () => {
+          if (searchInput) searchInput.value = '';
+          loadProductsForBrand(brandId, currentVolumeId);
+        });
+      }
+    });
+  }
+}
+
+function loadBrand(brandId) {
+  fetch(`/api/brands/${brandId}`)
+    .then(res => res.json())
+    .then(brand => {
+      document.getElementById('brandName').textContent = brand.name;
+      document.getElementById('brandDescription').textContent = brand.description || '';
+      document.getElementById('brandImage').src = brand.image || '';
+      document.title = brand.name + ' — Sushnykoff';
+    });
+}
+
+function loadProductsForBrand(brandId, volumeId = null, search = '') {
+  currentVolumeId = volumeId;
+  const url = new URL('/api/products', window.location.origin);
+  url.searchParams.append('brandId', brandId);
+  if (volumeId) url.searchParams.append('volumeId', volumeId);
+  if (search) url.searchParams.append('search', search);
+  url.searchParams.append('page', currentPage);
+  url.searchParams.append('limit', 12);
+  fetch(url)
+    .then(res => res.json())
+    .then(data => {
+      products = data.items || [];
+      totalPages = data.totalPages || 1;
+      currentPage = data.page || 1;
+      renderProducts();
+      renderPagination();
+      loadVolumesFilter(brandId);
+    })
+    .catch(err => console.error('Ошибка загрузки товаров бренда:', err));
+}
+
+function loadVolumesFilter(brandId) {
+  fetch(`/api/volumes?brandId=${brandId}`)
+    .then(res => res.json())
+    .then(volumes => {
+      const container = document.getElementById('volumesFilter');
+      if (!container) return;
+      if (!volumes.length) { container.innerHTML = ''; return; }
+      let html = '<button class="volume-btn active" data-id="all">Все объёмы</button>';
+      volumes.forEach(v => {
+        html += `<button class="volume-btn" data-id="${v.id}">${v.name}</button>`;
+      });
+      container.innerHTML = html;
+      container.querySelectorAll('.volume-btn').forEach(btn => {
+        btn.addEventListener('click', function() {
+          container.querySelectorAll('.volume-btn').forEach(b => b.classList.remove('active'));
+          this.classList.add('active');
+          const vid = this.dataset.id === 'all' ? null : this.dataset.id;
+          loadProductsForBrand(currentBrandId, vid);
+        });
+      });
+    });
+}
+
+// ---- Загрузка товаров через фильтр на главной ----
+function loadProductsFromFilter() {
+  const category = categoryFilter ? categoryFilter.value : 'all';
+  const search = searchInput ? searchInput.value.trim() : '';
   const url = new URL('/api/products', window.location.origin);
   if (category && category !== 'all') url.searchParams.append('category', category);
   if (search) url.searchParams.append('search', search);
-  url.searchParams.append('page', page);
+  url.searchParams.append('page', currentPage);
   url.searchParams.append('limit', 12);
-
   fetch(url)
     .then(res => res.json())
     .then(data => {
@@ -106,9 +290,10 @@ function loadProducts(page = 1) {
     .catch(err => console.error('Ошибка загрузки товаров:', err));
 }
 
+// ---- Универсальный рендер товаров ----
 function renderProducts() {
   if (!productsGrid) return;
-  if (products.length === 0) {
+  if (!products.length) {
     productsGrid.innerHTML = `<p style="grid-column:1/-1; text-align:center; padding:40px; color:#7f8c8d;">Товары не найдены</p>`;
     return;
   }
@@ -118,21 +303,15 @@ function renderProducts() {
     <div class="product-card" data-id="${p.id}">
       <img class="product-img" src="${p.image || 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="100" height="100"%3E%3Crect width="100" height="100" fill="%23f0f2f5"/%3E%3Ctext x="50" y="55" text-anchor="middle" font-size="40" dy=".35em"%3E🥤%3C/text%3E%3C/svg%3E'}" alt="${p.name}">
       <div class="name">${p.name}</div>
-      <div class="type">${p.category_name || 'Без категории'}</div>
       <div class="price">${p.price} ₽</div>
-      <div style="display:flex; gap:10px; justify-content:center;">
+      <div class="type">${p.volume_name || ''}</div>
+      <div style="display:flex; gap:10px; justify-content:center; margin-top:8px;">
         <button class="add-btn" data-id="${p.id}">➕</button>
         <button class="fav-btn ${isFav?'active':''}" data-id="${p.id}" style="background:none; border:none; font-size:22px; cursor:pointer;">${isFav?'❤️':'🤍'}</button>
       </div>
     </div>`;
   }).join('');
 
-  document.querySelectorAll('.product-card').forEach(card => {
-    card.addEventListener('click', function(e) {
-      if (e.target.closest('button')) return;
-      window.location.href = `/product.html?id=${this.dataset.id}`;
-    });
-  });
   document.querySelectorAll('.add-btn').forEach(btn => {
     btn.addEventListener('click', (e) => {
       e.stopPropagation();
@@ -145,32 +324,67 @@ function renderProducts() {
       toggleFavorite(parseInt(btn.dataset.id));
     });
   });
+  document.querySelectorAll('.product-card').forEach(card => {
+    card.addEventListener('click', function(e) {
+      if (e.target.closest('button')) return;
+      window.location.href = `/product.html?id=${this.dataset.id}`;
+    });
+  });
 }
 
 function renderPagination() {
   if (!pagination) return;
-  if (totalPages <= 1) {
-    pagination.innerHTML = '';
-    return;
-  }
+  if (totalPages <= 1) { pagination.innerHTML = ''; return; }
   let html = '';
   for (let i = 1; i <= totalPages; i++) {
     html += `<button class="page-btn ${i===currentPage?'active':''}" data-page="${i}">${i}</button>`;
   }
   pagination.innerHTML = html;
   pagination.querySelectorAll('.page-btn').forEach(btn => {
-    btn.addEventListener('click', () => loadProducts(parseInt(btn.dataset.page)));
+    btn.addEventListener('click', () => {
+      currentPage = parseInt(btn.dataset.page);
+      if (window.location.pathname.includes('brand.html')) {
+        loadProductsForBrand(currentBrandId, currentVolumeId);
+      } else if (window.location.pathname.includes('brands.html')) {
+        const params = new URLSearchParams(window.location.search);
+        const categoryId = params.get('category');
+        if (categoryId) loadBrandsCategoryProducts(categoryId);
+      } else {
+        loadProductsFromFilter();
+      }
+    });
   });
 }
 
-// ===== Избранное =====
+// ============================================================
+// СТАРЫЕ ФУНКЦИИ (КОРЗИНА, АВТОРИЗАЦИЯ, ИЗБРАННОЕ, УВЕДОМЛЕНИЯ, НОВОСТИ, ФОН)
+// ============================================================
+
+// ---- Категории для фильтра (загрузка всех категорий) ----
+function loadCategoriesForFilter() {
+  if (!categoryFilter) return;
+  fetch('/api/categories')
+    .then(res => res.json())
+    .then(cats => {
+      categoryFilter.innerHTML = '<option value="all">Все</option>';
+      cats.forEach(c => {
+        const opt = document.createElement('option');
+        opt.value = c.id;
+        opt.textContent = c.name;
+        categoryFilter.appendChild(opt);
+      });
+    })
+    .catch(err => console.error('Ошибка загрузки категорий для фильтра:', err));
+}
+
+// ---- Избранное ----
 function loadFavorites() {
   if (!currentUser) return;
   fetch('/api/favorites')
     .then(res => res.json())
     .then(data => {
       favorites = data;
-      renderProducts();
+      renderProducts(); // обновляем отображение
     })
     .catch(err => console.error('Ошибка загрузки избранного:', err));
 }
@@ -193,7 +407,7 @@ function toggleFavorite(productId) {
     .catch(err => console.error('Ошибка избранного:', err));
 }
 
-// ===== Новости =====
+// ---- Новости ----
 function checkNews() {
   fetch('/api/news/latest')
     .then(res => res.json())
@@ -219,7 +433,7 @@ if (newsOverlay) {
   });
 }
 
-// ===== Аутентификация =====
+// ---- Аутентификация ----
 function loadUser() {
   fetch('/api/auth/me')
     .then(res => res.json())
@@ -252,26 +466,23 @@ function checkAdminStatus() {
   fetch('/api/admin/status')
     .then(res => res.json())
     .then(data => {
-      console.log('🔍 Статус админа:', data);
       const adminLink = document.getElementById('adminLink');
       if (adminLink) {
         if (data.isAdmin) {
           adminLink.style.display = 'flex';
-          console.log('✅ Кнопка админки ПОКАЗАНА');
+          console.log('✅ Кнопка админки показана');
         } else {
           adminLink.style.display = 'none';
-          console.log('❌ Кнопка админки скрыта');
         }
       }
     })
-    .catch(err => {
-      console.error('❌ Ошибка проверки статуса админа:', err);
+    .catch(() => {
       const adminLink = document.getElementById('adminLink');
       if (adminLink) adminLink.style.display = 'none';
     });
 }
 
-// ===== Вход =====
+// ---- Вход ----
 const loginBtn = document.getElementById('loginBtn');
 const closeLoginBtn = document.getElementById('closeLoginBtn');
 const loginForm = document.getElementById('loginForm');
@@ -317,7 +528,7 @@ if (loginForm) {
   });
 }
 
-// ===== Регистрация =====
+// ---- Регистрация ----
 const registerBtn = document.getElementById('registerBtn');
 const closeRegisterBtn = document.getElementById('closeRegisterBtn');
 const registerForm = document.getElementById('registerForm');
@@ -367,7 +578,7 @@ if (registerForm) {
   });
 }
 
-// ===== Выход =====
+// ---- Выход ----
 const logoutBtn = document.getElementById('logoutBtn');
 if (logoutBtn) {
   logoutBtn.addEventListener('click', () => {
@@ -379,14 +590,122 @@ if (logoutBtn) {
   });
 }
 
-// ===== Восстановление =====
-// (оставляем как есть, код не меняем)
+// ---- Восстановление ----
+const forgotLoginBtn = document.getElementById('forgotLoginBtn');
+const forgotPasswordBtn = document.getElementById('forgotPasswordBtn');
+const recoverOverlay = document.getElementById('recoverOverlay');
+const closeRecoverBtn = document.getElementById('closeRecoverBtn');
+const recoverFirstName = document.getElementById('recoverFirstName');
+const recoverLastName = document.getElementById('recoverLastName');
+const recoverSearchBtn = document.getElementById('recoverSearchBtn');
+const recoverStep1 = document.getElementById('recoverStep1');
+const recoverStep2 = document.getElementById('recoverStep2');
+const recoveredLogin = document.getElementById('recoveredLogin');
+const recoverNewPassword = document.getElementById('recoverNewPassword');
+const recoverResetBtn = document.getElementById('recoverResetBtn');
+const recoverMessage = document.getElementById('recoverMessage');
+const recoverError = document.getElementById('recoverError');
 
-// ===== Корзина =====
+if (forgotLoginBtn) {
+  forgotLoginBtn.addEventListener('click', () => {
+    if (loginOverlayElem) loginOverlayElem.classList.remove('open');
+    if (recoverOverlay) recoverOverlay.classList.add('open');
+    if (recoverStep1) recoverStep1.style.display = 'block';
+    if (recoverStep2) recoverStep2.style.display = 'none';
+    if (recoverMessage) recoverMessage.textContent = '';
+    if (recoverError) recoverError.textContent = '';
+  });
+}
+if (forgotPasswordBtn) {
+  forgotPasswordBtn.addEventListener('click', () => {
+    if (loginOverlayElem) loginOverlayElem.classList.remove('open');
+    if (recoverOverlay) recoverOverlay.classList.add('open');
+    if (recoverStep1) recoverStep1.style.display = 'block';
+    if (recoverStep2) recoverStep2.style.display = 'none';
+    if (recoverMessage) recoverMessage.textContent = '';
+    if (recoverError) recoverError.textContent = '';
+  });
+}
+if (closeRecoverBtn) {
+  closeRecoverBtn.addEventListener('click', () => {
+    if (recoverOverlay) recoverOverlay.classList.remove('open');
+  });
+}
+if (recoverSearchBtn) {
+  recoverSearchBtn.addEventListener('click', () => {
+    const firstName = recoverFirstName.value;
+    const lastName = recoverLastName.value;
+    if (!firstName || !lastName) {
+      if (recoverError) recoverError.textContent = 'Введите имя и фамилию';
+      return;
+    }
+    fetch('/api/auth/recover-login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ firstName, lastName })
+    })
+      .then(res => res.json())
+      .then(data => {
+        if (data.login) {
+          if (recoveredLogin) recoveredLogin.textContent = data.login;
+          if (recoverStep1) recoverStep1.style.display = 'none';
+          if (recoverStep2) recoverStep2.style.display = 'block';
+          if (recoverError) recoverError.textContent = '';
+          if (recoverMessage) recoverMessage.textContent = '';
+        } else {
+          if (recoverError) recoverError.textContent = data.error || 'Пользователь не найден';
+        }
+      })
+      .catch(() => {
+        if (recoverError) recoverError.textContent = 'Ошибка соединения';
+      });
+  });
+}
+if (recoverResetBtn) {
+  recoverResetBtn.addEventListener('click', () => {
+    const firstName = recoverFirstName.value;
+    const lastName = recoverLastName.value;
+    const login = recoveredLogin ? recoveredLogin.textContent : '';
+    const newPassword = recoverNewPassword.value;
+    if (!newPassword) {
+      if (recoverError) recoverError.textContent = 'Введите новый пароль';
+      return;
+    }
+    fetch('/api/auth/reset-password', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ firstName, lastName, login, newPassword })
+    })
+      .then(res => res.json())
+      .then(data => {
+        if (data.success) {
+          if (recoverMessage) recoverMessage.textContent = 'Пароль успешно изменён!';
+          if (recoverError) recoverError.textContent = '';
+          setTimeout(() => {
+            if (recoverOverlay) recoverOverlay.classList.remove('open');
+            if (recoverStep2) recoverStep2.style.display = 'none';
+            if (recoverStep1) recoverStep1.style.display = 'block';
+            if (recoverNewPassword) recoverNewPassword.value = '';
+            if (recoverMessage) recoverMessage.textContent = '';
+          }, 2000);
+        } else {
+          if (recoverError) recoverError.textContent = data.error || 'Ошибка сброса пароля';
+        }
+      })
+      .catch(() => {
+        if (recoverError) recoverError.textContent = 'Ошибка соединения';
+      });
+  });
+}
+
+// ---- Корзина ----
 function loadCart() {
   fetch('/api/cart')
     .then(res => res.json())
-    .then(data => { cart = data; updateCartUI(); })
+    .then(data => {
+      cart = data;
+      updateCartUI();
+    })
     .catch(err => console.error('Ошибка загрузки корзины:', err));
 }
 
@@ -430,6 +749,7 @@ function updateCartUI() {
     return;
   }
 
+  // Получаем актуальные товары для отображения в корзине
   fetch('/api/products')
     .then(res => res.json())
     .then(data => {
@@ -480,7 +800,7 @@ function updateCartUI() {
     .catch(err => console.error('Ошибка обновления корзины:', err));
 }
 
-// ===== Оформление заказа =====
+// ---- Оформление заказа ----
 if (checkoutBtn) {
   checkoutBtn.addEventListener('click', async () => {
     if (cart.length === 0) {
@@ -495,8 +815,9 @@ if (checkoutBtn) {
     try {
       const response = await fetch('/api/orders', { method: 'POST' });
       const data = await response.json();
-      if (data.error) alert(data.error);
-      else {
+      if (data.error) {
+        alert(data.error);
+      } else {
         alert(`Заказ №${data.orderId} создан! Сумма: ${data.total} ₽`);
         loadCart();
         closeCart();
@@ -507,7 +828,7 @@ if (checkoutBtn) {
   });
 }
 
-// ===== Открытие/закрытие корзины =====
+// ---- Открытие/закрытие корзины ----
 function openCart() {
   if (cartOverlay) cartOverlay.classList.add('open');
   document.body.style.overflow = 'hidden';
@@ -525,17 +846,24 @@ if (cartOverlay) {
   });
 }
 
-// ===== Фильтр и поиск =====
-if (categoryFilter) categoryFilter.addEventListener('change', () => loadProducts(1));
+// ---- Фильтр и поиск (главная) ----
+if (categoryFilter) categoryFilter.addEventListener('change', () => {
+  currentPage = 1;
+  loadProductsFromFilter();
+});
 if (resetFilterBtn) {
   resetFilterBtn.addEventListener('click', () => {
     if (categoryFilter) categoryFilter.value = 'all';
     if (searchInput) searchInput.value = '';
-    loadProducts(1);
+    currentPage = 1;
+    loadProductsFromFilter();
   });
 }
 if (searchInput) {
-  searchInput.addEventListener('input', debounce(() => loadProducts(1), 300));
+  searchInput.addEventListener('input', debounce(() => {
+    currentPage = 1;
+    loadProductsFromFilter();
+  }, 300));
 }
 
 function debounce(fn, delay) {
@@ -546,7 +874,7 @@ function debounce(fn, delay) {
   };
 }
 
-// ===== Закрытие модалок =====
+// ---- Закрытие модалок по клику вне ----
 [document.getElementById('loginOverlay'), document.getElementById('registerOverlay'), document.getElementById('recoverOverlay'), document.getElementById('notifOverlay')].forEach(overlay => {
   if (overlay) {
     overlay.addEventListener('click', (e) => {
@@ -557,7 +885,7 @@ function debounce(fn, delay) {
   }
 });
 
-// ===== Уведомления =====
+// ---- Уведомления ----
 let notifications = [];
 let notifInterval = null;
 
@@ -567,7 +895,9 @@ function loadNotifications() {
     .then(data => {
       notifications = data;
       updateNotifBadge();
-      if (notifications.length > 0) showToast(notifications[0].message);
+      if (notifications.length > 0) {
+        showToast(notifications[0].message);
+      }
     })
     .catch(err => console.error('Ошибка загрузки уведомлений:', err));
 }
@@ -601,7 +931,9 @@ function showToast(message) {
   toast.className = 'toast';
   toast.textContent = message;
   document.body.appendChild(toast);
-  setTimeout(() => toast.classList.add('show'), 100);
+  setTimeout(() => {
+    toast.classList.add('show');
+  }, 100);
   setTimeout(() => {
     toast.classList.remove('show');
     setTimeout(() => toast.remove(), 300);
@@ -642,7 +974,7 @@ function startNotifPolling() {
 }
 startNotifPolling();
 
-// ===== Фон =====
+// ---- Фон ----
 function applyBackground() {
   fetch('/api/background')
     .then(res => res.json())
@@ -661,101 +993,29 @@ function applyBackground() {
     .catch(err => console.error('Ошибка загрузки фона:', err));
 }
 
-// ===== ИНИЦИАЛИЗАЦИЯ =====
-loadCategories();
-loadProducts();
-loadCart();
-loadUser();
-applyBackground();
+// ============================================================
+// ИНИЦИАЛИЗАЦИЯ
+// ============================================================
+function init() {
+  // Загружаем категории для фильтра (если есть)
+  loadCategoriesForFilter();
 
-setTimeout(checkAdminStatus, 2000);
-
-// ===== НАВИГАЦИОННАЯ ЦЕПОЧКА =====
-function updateBreadcrumbs() {
-  const container = document.getElementById('breadcrumbs');
-  if (!container) return;
-
-  const path = window.location.pathname;
-  const page = path.split('/').pop() || 'index.html';
-  const params = new URLSearchParams(window.location.search);
-  let crumbs = [];
-
-  // Главная всегда есть
-  crumbs.push({ name: 'Главная', url: '/' });
-
-  // Определяем страницу
-  if (page === 'index.html' || page === '' || page === '/') {
-    // На главной показываем только "Главная"
-    crumbs = crumbs.slice(0, 1);
-  } else if (page === 'product.html') {
-    const productId = params.get('id');
-    if (productId) {
-      // Пытаемся получить название товара из глобальной переменной products
-      const product = products.find(p => p.id == productId);
-      const productName = product ? product.name : 'Товар';
-      crumbs.push({ name: productName, url: null });
-    } else {
-      crumbs.push({ name: 'Товар', url: null });
-    }
-  } else if (page === 'about.html') {
-    crumbs.push({ name: 'О нас', url: null });
-  } else if (page === 'contacts.html') {
-    crumbs.push({ name: 'Контакты', url: null });
-  } else if (page === 'map.html') {
-    crumbs.push({ name: 'Карта', url: null });
-  } else if (page === 'profile.html') {
-    crumbs.push({ name: 'Профиль', url: null });
-  } else {
-    // Для остальных страниц (например, admin.html) ничего не показываем
-    container.innerHTML = '';
-    return;
+  // Если главная страница — загружаем категории (4 в строку)
+  if (window.location.pathname === '/' || window.location.pathname === '/index.html') {
+    loadCategories();
+    loadProductsFromFilter();
   }
 
-  // Генерируем HTML
-  let html = '';
-  crumbs.forEach((crumb, index) => {
-    if (index > 0) {
-      html += `<span class="separator">›</span>`;
-    }
-    if (crumb.url) {
-      html += `<a href="${crumb.url}">${crumb.name}</a>`;
-    } else {
-      html += `<span class="current">${crumb.name}</span>`;
-    }
-  });
+  // Загружаем корзину, пользователя, фон
+  loadCart();
+  loadUser();
+  applyBackground();
 
-  container.innerHTML = html;
+  // Дополнительная проверка админ-статуса через 2 секунды
+  setTimeout(checkAdminStatus, 2000);
+
+  console.log('✅ Скрипт загружен. Все функции активны.');
 }
 
-// Вызываем при загрузке и после обновления товаров (для product.html)
-document.addEventListener('DOMContentLoaded', updateBreadcrumbs);
-
-// Если на странице product.html, обновим крошки после загрузки товара
-// Для этого добавим вызов в функцию, которая загружает товар (если она есть)
-// В вашем script.js уже есть loadProduct, но для надёжности добавим перехват:
-if (window.location.pathname.includes('product.html')) {
-  // Если есть функция loadProduct, она уже вызывает renderProduct, можем добавить вызов updateBreadcrumbs в неё
-  // Но проще добавить обработчик MutationObserver или просто вызывать после загрузки данных
-  // Однако мы можем переопределить renderProduct или добавить в неё вызов.
-  // Так как мы не знаем точно, где у вас загружается товар, я предлагаю просто вызывать updateBreadcrumbs
-  // после того, как данные товара загружены — например, в loadProduct добавить:
-  // updateBreadcrumbs();
-  // Но чтобы не ломать существующий код, я добавлю прослушку события загрузки страницы и проверку каждые 500 мс,
-  // но это плохо. Лучше изменить loadProduct в вашем script.js.
-  // Поэтому я дам инструкцию: в файле product.html после загрузки товара вызвать updateBreadcrumbs().
-  // Или добавим в script.js глобально:
-  // Если на странице есть функция loadProduct, мы можем её обернуть.
-  // Давайте сделаем так: добавим в конец скрипта проверку, и если есть функция loadProduct — переопределим её.
-  if (typeof loadProduct === 'function') {
-    const originalLoadProduct = loadProduct;
-    loadProduct = function() {
-      originalLoadProduct.apply(this, arguments);
-      setTimeout(updateBreadcrumbs, 100); // даём время на обновление DOM
-    };
-  }
-}
-
-// Также обновляем при изменении URL (для SPA, если есть)
-window.addEventListener('popstate', updateBreadcrumbs);
-
-console.log('✅ Скрипт загружен. Все функции активны.');
+// Запуск
+init();

@@ -3,16 +3,17 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>🥤 Sushnykoff Магазин напитков — купить вкусные напитки в Нальчике. Доставка по Нальчику. Вода. Безалкогольные напитки. Рынок Дубки модуль 2 контейнер 172. сушникоф. 2/172. Магазин Инны. Точнка Инны Дубки. Нальчик </title>
-  <meta name="description" content="Широкий ассортимент газировок, соков, воды, энергетиков и чая. Быстрая доставка по Нальчику.">
+  <title>Sushnykoff — магазин напитков</title>
+  <link rel="stylesheet" href="style.css">
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🧃</text></svg>">
-  <link rel="stylesheet" href="style.css?v=10">
 </head>
 <body>
-
 <div class="container">
+  <!-- ===== ШАПКА ===== -->
   <header class="header">
-    <h1>🥤 <span>Sushnykoff</span></h1>
+    <a href="/" style="text-decoration:none; color:inherit;">
+      <h1>🥤 <span>Sushnykoff</span></h1>
+    </a>
     <div class="header-actions">
       <button class="cart-btn" id="openCartBtn">🛒 <span class="badge" id="cartCount">0</span></button>
       <button id="notifBtn" class="admin-btn" style="background:#f39c12; position:relative; padding:8px 16px;">
@@ -30,9 +31,25 @@
       <a href="admin.html" class="admin-btn" id="adminLink" style="display:none;">⚙️ Админка</a>
     </div>
   </header>
-  <!-- Навигационная цепочка -->
-  <div class="breadcrumbs" id="breadcrumbs"></div>
 
+  <!-- ===== БУРГЕР ===== -->
+  <div class="burger-wrapper">
+    <button class="burger-btn" id="burgerBtn" aria-label="Меню">
+      <span></span>
+      <span></span>
+      <span></span>
+    </button>
+    <div class="burger-menu" id="burgerMenu">
+      <a href="/">Главная</a>
+      <a href="/about.html">О нас</a>
+      <a href="/contacts.html">Контакты</a>
+      <a href="/map.html">Карта</a>
+      <a href="/profile.html">Профиль</a>
+      <a href="https://wa.me/79889369730?text=Здравствуйте!%20У%20меня%20есть%20вопрос" target="_blank" class="whatsapp-link-burger">💬 WhatsApp</a>
+    </div>
+  </div>
+
+  <!-- ===== ФИЛЬТР + ПОИСК ===== -->
   <div class="filter-section">
     <label for="categoryFilter">Категория:</label>
     <select id="categoryFilter"><option value="all">Все</option></select>
@@ -40,26 +57,19 @@
     <button class="reset-btn" id="resetFilterBtn">Сбросить</button>
   </div>
 
+  <!-- ===== СЕТКА КАТЕГОРИЙ (4 в строку) ===== -->
+  <div class="categories-grid" id="categoriesGrid"></div>
+
+  <!-- ===== ТОВАРЫ И ПАГИНАЦИЯ ===== -->
   <div class="products-grid" id="productsGrid"></div>
   <div class="pagination" id="pagination"></div>
 </div>
 
-<!-- ===== БУРГЕР (вне .container) ===== -->
-<div class="burger-wrapper" id="burgerWrapper">
-  <button class="burger-btn" id="burgerBtn" aria-label="Меню">
-    <span></span>
-    <span></span>
-    <span></span>
-  </button>
-  <div class="burger-menu" id="burgerMenu">
-    <a href="/map.html">📍 Карта</a>
-    <a href="/about.html">О нас</a>
-    <a href="/contacts.html">Контакты</a>
-    <a href="https://wa.me/79889369730?text=Здравствуйте!" target="_blank" class="whatsapp-link-burger">💬 WhatsApp</a>
-  </div>
-</div>
+<!-- ============================================================ -->
+<!-- ===== ВСЕ МОДАЛКИ ===== -->
+<!-- ============================================================ -->
 
-<!-- ===== МОДАЛКИ (все) ===== -->
+<!-- ---- КОРЗИНА ---- -->
 <div class="cart-overlay" id="cartOverlay">
   <div class="cart-panel">
     <div class="cart-header">
@@ -75,6 +85,7 @@
   </div>
 </div>
 
+<!-- ---- ВХОД ---- -->
 <div class="auth-overlay" id="loginOverlay">
   <div class="auth-panel">
     <div class="auth-header">
@@ -94,6 +105,7 @@
   </div>
 </div>
 
+<!-- ---- РЕГИСТРАЦИЯ ---- -->
 <div class="auth-overlay" id="registerOverlay">
   <div class="auth-panel">
     <div class="auth-header">
@@ -111,6 +123,7 @@
   </div>
 </div>
 
+<!-- ---- ВОССТАНОВЛЕНИЕ ---- -->
 <div class="auth-overlay" id="recoverOverlay">
   <div class="auth-panel">
     <div class="auth-header">
@@ -136,6 +149,7 @@
   </div>
 </div>
 
+<!-- ---- УВЕДОМЛЕНИЯ ---- -->
 <div class="auth-overlay" id="notifOverlay">
   <div class="auth-panel" style="max-width:500px;">
     <div class="auth-header">
@@ -147,6 +161,7 @@
   </div>
 </div>
 
+<!-- ---- НОВОСТИ ---- -->
 <div class="auth-overlay" id="newsOverlay">
   <div class="auth-panel" style="max-width:600px;">
     <div class="auth-header">
@@ -158,7 +173,6 @@
   </div>
 </div>
 
-<!-- ===== ТОЛЬКО ОДИН СКРИПТ ===== -->
-<script src="script.js?v=10"></script>
+<script src="script.js"></script>
 </body>
 </html>
