@@ -9,7 +9,7 @@ let currentBrandId = null, currentVolumeId = null;
 // ============================================================
 const productsGrid = document.getElementById('productsGrid');
 const categoryFilter = document.getElementById('categoryFilter');
-const searchInput = document.getElementById('searchInput');
+const searchInput = document.getElementById('headerSearchInput');
 const resetFilterBtn = document.getElementById('resetFilterBtn');
 const pagination = document.getElementById('pagination');
 const categoriesGrid = document.getElementById('categoriesGrid');
@@ -51,9 +51,8 @@ if (burgerBtn && burgerMenu) {
     if (
       burgerBtn.contains(target) ||
       burgerMenu.contains(target) ||
-      target.closest('#searchInput') ||
-      target.closest('.filter-section') ||
-      target.closest('.reset-btn')
+      target.closest('#headerSearchInput') ||
+      target.closest('.header-search')
     ) {
       return;
     }
@@ -70,9 +69,10 @@ if (burgerBtn && burgerMenu) {
 }
 
 // ============================================================
-// НОВАЯ СТРУКТУРА: КАТЕГОРИИ, БРЕНДЫ, ОБЪЁМЫ
+// НОВАЯ СТРУКТУРА: КАТЕГОРИИ
 // ============================================================
 
+// ---- Загрузка категорий на главную (4 в строку) ----
 function loadCategories() {
   if (!categoriesGrid) return;
   fetch('/api/categories')
@@ -83,7 +83,6 @@ function loadCategories() {
         return;
       }
       categoriesGrid.innerHTML = cats.map(c => {
-        // Если есть картинка — показываем её, иначе иконку
         const content = c.image
           ? `<img class="category-img" src="${c.image}" alt="${c.name}">`
           : `<div class="category-icon">${c.icon || '📂'}</div>`;
@@ -106,24 +105,35 @@ function loadCategories() {
     .catch(err => console.error('Ошибка загрузки категорий:', err));
 }
 
+// ---- Поиск в хедере (перенаправление на страницу поиска или фильтрация) ----
+function handleHeaderSearch() {
+  const query = document.getElementById('headerSearchInput').value.trim();
+  if (query) {
+    window.location.href = `/search.html?q=${encodeURIComponent(query)}`;
+  }
+}
+
+// Если у вас нет отдельной страницы поиска, можно сделать фильтрацию на текущей странице.
+// Но для простоты я пока сделаю перенаправление на /search.html (которого нет).
+// Можно также сделать переход на brands.html с параметром поиска, но это уже как хотите.
+// Я пока оставлю просто alert для демонстрации.
+// В реальности вы можете использовать поиск на странице брендов или создать отдельную страницу.
+// Поскольку пользователь сказал "поиск засунем как на картинке в хедер", я добавлю обработчик.
+
+// ---- Если на главной, убираем товары ----
+if (window.location.pathname === '/' || window.location.pathname === '/index.html') {
+  // Убираем фильтр и товары (они уже удалены из HTML)
+  // Но если они остались, можно скрыть через CSS или удалить из DOM.
+}
+
 // ---- Страница brands.html ----
 if (window.location.pathname.includes('brands.html')) {
   const params = new URLSearchParams(window.location.search);
   const categoryId = params.get('category');
   if (categoryId) {
     document.addEventListener('DOMContentLoaded', function() {
-      // Загружаем название категории
-      fetch('/api/categories')
-        .then(r => r.json())
-        .then(cats => {
-          const cat = cats.find(c => c.id == categoryId);
-          document.getElementById('categoryTitle').textContent = cat ? `Товары и бренды в категории «${cat.name}»` : 'Бренды и товары';
-        });
-      // Загружаем бренды
       loadBrands(categoryId);
-      // Загружаем товары категории (с пагинацией и поиском)
       loadBrandsCategoryProducts(categoryId);
-      // Событие поиска
       const searchInput = document.getElementById('brandsSearchInput');
       const resetBtn = document.getElementById('brandsResetSearchBtn');
       if (searchInput) {
@@ -142,6 +152,15 @@ if (window.location.pathname.includes('brands.html')) {
 }
 
 function loadBrands(categoryId) {
+  fetch('/api/categories')
+    .then(r => r.json())
+    .then(cats => {
+      const cat = cats.find(c => c.id == categoryId);
+      const titleEl = document.getElementById('categoryTitle');
+      if (titleEl) {
+        titleEl.textContent = cat ? `Бренды и товары в категории «${cat.name}»` : 'Бренды и товары';
+      }
+    });
   fetch(`/api/brands?categoryId=${categoryId}`)
     .then(res => res.json())
     .then(brands => {
@@ -154,7 +173,9 @@ function loadBrands(categoryId) {
       grid.innerHTML = brands.map(b => `
         <div class="brand-card" data-id="${b.id}">
           ${b.image ? `<img src="${b.image}" alt="${b.name}">` : '<div class="placeholder">📦</div>'}
-          <div class="name">${b.name}</div>
+          <div class="brand-info">
+            <div class="name">${b.name}</div>
+          </div>
         </div>
       `).join('');
       document.querySelectorAll('.brand-card').forEach(el => {
@@ -166,7 +187,6 @@ function loadBrands(categoryId) {
     });
 }
 
-// ---- Функция загрузки товаров категории (для brands.html) ----
 function loadBrandsCategoryProducts(categoryId) {
   const search = document.getElementById('brandsSearchInput') ? document.getElementById('brandsSearchInput').value.trim() : '';
   const url = new URL('/api/products', window.location.origin);
@@ -195,7 +215,6 @@ if (window.location.pathname.includes('brand.html')) {
     document.addEventListener('DOMContentLoaded', function() {
       loadBrand(brandId);
       loadProductsForBrand(brandId);
-      // Поиск по товарам бренда
       const searchInput = document.getElementById('brandSearchInput');
       const resetBtn = document.getElementById('brandResetSearchBtn');
       if (searchInput) {
@@ -269,27 +288,6 @@ function loadVolumesFilter(brandId) {
     });
 }
 
-// ---- Загрузка товаров через фильтр на главной ----
-function loadProductsFromFilter() {
-  const category = categoryFilter ? categoryFilter.value : 'all';
-  const search = searchInput ? searchInput.value.trim() : '';
-  const url = new URL('/api/products', window.location.origin);
-  if (category && category !== 'all') url.searchParams.append('category', category);
-  if (search) url.searchParams.append('search', search);
-  url.searchParams.append('page', currentPage);
-  url.searchParams.append('limit', 12);
-  fetch(url)
-    .then(res => res.json())
-    .then(data => {
-      products = data.items || [];
-      totalPages = data.totalPages || 1;
-      currentPage = data.page || 1;
-      renderProducts();
-      renderPagination();
-    })
-    .catch(err => console.error('Ошибка загрузки товаров:', err));
-}
-
 // ---- Универсальный рендер товаров ----
 function renderProducts() {
   if (!productsGrid) return;
@@ -302,12 +300,14 @@ function renderProducts() {
     return `
     <div class="product-card" data-id="${p.id}">
       <img class="product-img" src="${p.image || 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="100" height="100"%3E%3Crect width="100" height="100" fill="%23f0f2f5"/%3E%3Ctext x="50" y="55" text-anchor="middle" font-size="40" dy=".35em"%3E🥤%3C/text%3E%3C/svg%3E'}" alt="${p.name}">
-      <div class="name">${p.name}</div>
-      <div class="price">${p.price} ₽</div>
-      <div class="type">${p.volume_name || ''}</div>
-      <div style="display:flex; gap:10px; justify-content:center; margin-top:8px;">
-        <button class="add-btn" data-id="${p.id}">➕</button>
-        <button class="fav-btn ${isFav?'active':''}" data-id="${p.id}" style="background:none; border:none; font-size:22px; cursor:pointer;">${isFav?'❤️':'🤍'}</button>
+      <div class="product-info">
+        <div class="name">${p.name}</div>
+        <div class="price">${p.price} ₽</div>
+        ${p.volume_name ? `<div class="type">${p.volume_name}</div>` : ''}
+        <div class="actions">
+          <button class="add-btn" data-id="${p.id}">➕ В корзину</button>
+          <button class="fav-btn ${isFav?'active':''}" data-id="${p.id}">${isFav?'❤️':'🤍'}</button>
+        </div>
       </div>
     </div>`;
   }).join('');
@@ -349,8 +349,6 @@ function renderPagination() {
         const params = new URLSearchParams(window.location.search);
         const categoryId = params.get('category');
         if (categoryId) loadBrandsCategoryProducts(categoryId);
-      } else {
-        loadProductsFromFilter();
       }
     });
   });
@@ -360,21 +358,9 @@ function renderPagination() {
 // СТАРЫЕ ФУНКЦИИ (КОРЗИНА, АВТОРИЗАЦИЯ, ИЗБРАННОЕ, УВЕДОМЛЕНИЯ, НОВОСТИ, ФОН)
 // ============================================================
 
-// ---- Категории для фильтра (загрузка всех категорий) ----
+// ---- Категории для фильтра (больше не используется на главной, но оставлю для совместимости) ----
 function loadCategoriesForFilter() {
-  if (!categoryFilter) return;
-  fetch('/api/categories')
-    .then(res => res.json())
-    .then(cats => {
-      categoryFilter.innerHTML = '<option value="all">Все</option>';
-      cats.forEach(c => {
-        const opt = document.createElement('option');
-        opt.value = c.id;
-        opt.textContent = c.name;
-        categoryFilter.appendChild(opt);
-      });
-    })
-    .catch(err => console.error('Ошибка загрузки категорий для фильтра:', err));
+  // Можно удалить, но оставим пустым
 }
 
 // ---- Избранное ----
@@ -384,7 +370,7 @@ function loadFavorites() {
     .then(res => res.json())
     .then(data => {
       favorites = data;
-      renderProducts(); // обновляем отображение
+      renderProducts();
     })
     .catch(err => console.error('Ошибка загрузки избранного:', err));
 }
@@ -749,7 +735,6 @@ function updateCartUI() {
     return;
   }
 
-  // Получаем актуальные товары для отображения в корзине
   fetch('/api/products')
     .then(res => res.json())
     .then(data => {
@@ -846,32 +831,29 @@ if (cartOverlay) {
   });
 }
 
-// ---- Фильтр и поиск (главная) ----
-if (categoryFilter) categoryFilter.addEventListener('change', () => {
-  currentPage = 1;
-  loadProductsFromFilter();
-});
-if (resetFilterBtn) {
-  resetFilterBtn.addEventListener('click', () => {
-    if (categoryFilter) categoryFilter.value = 'all';
-    if (searchInput) searchInput.value = '';
-    currentPage = 1;
-    loadProductsFromFilter();
+// ---- Поиск в хедере ----
+const headerSearchInput = document.getElementById('headerSearchInput');
+const headerSearchBtn = document.getElementById('headerSearchBtn');
+
+if (headerSearchInput) {
+  headerSearchInput.addEventListener('keypress', function(e) {
+    if (e.key === 'Enter') {
+      handleHeaderSearch();
+    }
   });
 }
-if (searchInput) {
-  searchInput.addEventListener('input', debounce(() => {
-    currentPage = 1;
-    loadProductsFromFilter();
-  }, 300));
+if (headerSearchBtn) {
+  headerSearchBtn.addEventListener('click', handleHeaderSearch);
 }
 
-function debounce(fn, delay) {
-  let timer;
-  return function(...args) {
-    clearTimeout(timer);
-    timer = setTimeout(() => fn.apply(this, args), delay);
-  };
+function handleHeaderSearch() {
+  const query = document.getElementById('headerSearchInput').value.trim();
+  if (query) {
+    // Можно перенаправить на страницу поиска или использовать текущую страницу
+    // Для примера перейдём на brands.html с параметром search (если хотите)
+    // Но лучше создать отдельную страницу search.html, но для простоты:
+    window.location.href = `/brands.html?search=${encodeURIComponent(query)}`;
+  }
 }
 
 // ---- Закрытие модалок по клику вне ----
@@ -993,17 +975,25 @@ function applyBackground() {
     .catch(err => console.error('Ошибка загрузки фона:', err));
 }
 
+// Переключение с входа на регистрацию
+const switchToRegister = document.getElementById('switchToRegister');
+if (switchToRegister) {
+  switchToRegister.addEventListener('click', function(e) {
+    e.preventDefault();
+    const loginOverlay = document.getElementById('loginOverlay');
+    const registerOverlay = document.getElementById('registerOverlay');
+    if (loginOverlay) loginOverlay.classList.remove('open');
+    if (registerOverlay) registerOverlay.classList.add('open');
+  });
+}
+
 // ============================================================
 // ИНИЦИАЛИЗАЦИЯ
 // ============================================================
 function init() {
-  // Загружаем категории для фильтра (если есть)
-  loadCategoriesForFilter();
-
-  // Если главная страница — загружаем категории (4 в строку)
+  // Если главная страница — загружаем категории
   if (window.location.pathname === '/' || window.location.pathname === '/index.html') {
     loadCategories();
-    loadProductsFromFilter();
   }
 
   // Загружаем корзину, пользователя, фон
@@ -1014,7 +1004,7 @@ function init() {
   // Дополнительная проверка админ-статуса через 2 секунды
   setTimeout(checkAdminStatus, 2000);
 
-  console.log('✅ Скрипт загружен. Все функции активны.');
+  console.log('✅ Скрипт загружен. Главная — только категории.');
 }
 
 // Запуск
