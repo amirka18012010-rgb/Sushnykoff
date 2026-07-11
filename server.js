@@ -1,6 +1,3 @@
-// ============================================================
-// ПОЛНЫЙ SERVER.JS (better-sqlite3 + фото для категорий и брендов)
-// ============================================================
 require('dotenv').config();
 const express = require('express');
 const session = require('express-session');
@@ -23,7 +20,7 @@ const PORT = process.env.PORT || 3000;
 const db = new Database('./db/database.sqlite');
 db.pragma('foreign_keys = ON');
 
-// ---- Создание таблиц (все, включая новые) ----
+// ---- Создание таблиц ----
 db.exec(`
   CREATE TABLE IF NOT EXISTS categories (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -31,7 +28,6 @@ db.exec(`
     icon TEXT,
     image TEXT
   );
-
   CREATE TABLE IF NOT EXISTS brands (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT NOT NULL,
@@ -40,13 +36,11 @@ db.exec(`
     category_id INTEGER NOT NULL,
     FOREIGN KEY (category_id) REFERENCES categories(id)
   );
-
   CREATE TABLE IF NOT EXISTS volumes (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT NOT NULL UNIQUE,
     sort_order INTEGER DEFAULT 0
   );
-
   CREATE TABLE IF NOT EXISTS products (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT NOT NULL,
@@ -61,7 +55,6 @@ db.exec(`
     FOREIGN KEY (brand_id) REFERENCES brands(id),
     FOREIGN KEY (volume_id) REFERENCES volumes(id)
   );
-
   CREATE TABLE IF NOT EXISTS users (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     first_name TEXT NOT NULL,
@@ -71,7 +64,6 @@ db.exec(`
     is_blocked INTEGER DEFAULT 0,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
   );
-
   CREATE TABLE IF NOT EXISTS orders (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id INTEGER NOT NULL,
@@ -83,7 +75,6 @@ db.exec(`
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (user_id) REFERENCES users(id)
   );
-
   CREATE TABLE IF NOT EXISTS reviews (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     product_id INTEGER NOT NULL,
@@ -93,7 +84,6 @@ db.exec(`
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE CASCADE
   );
-
   CREATE TABLE IF NOT EXISTS favorites (
     user_id INTEGER NOT NULL,
     product_id INTEGER NOT NULL,
@@ -102,7 +92,6 @@ db.exec(`
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
     FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE CASCADE
   );
-
   CREATE TABLE IF NOT EXISTS news (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     title TEXT NOT NULL,
@@ -110,20 +99,17 @@ db.exec(`
     is_active INTEGER DEFAULT 1,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
   );
-
   CREATE TABLE IF NOT EXISTS settings (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     key TEXT NOT NULL UNIQUE,
     value TEXT
   );
-
   CREATE TABLE IF NOT EXISTS notifications (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     message TEXT NOT NULL,
     is_read INTEGER DEFAULT 0,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
   );
-
   CREATE TABLE IF NOT EXISTS admin (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     login TEXT NOT NULL UNIQUE,
@@ -148,7 +134,6 @@ const adminLogin = process.env.ADMIN_LOGIN || 'admin';
 const adminPass = process.env.ADMIN_PASSWORD || 'admin123';
 const adminStmt = db.prepare('INSERT OR IGNORE INTO admin (login, password) VALUES (?, ?)');
 adminStmt.run(adminLogin, adminPass);
-
 console.log('✅ База данных инициализирована (better-sqlite3)');
 
 // ---- Middleware ----
@@ -157,7 +142,6 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(express.static('public'));
 app.use('/uploads', express.static('uploads'));
-
 app.use(session({
   secret: process.env.SESSION_SECRET || 'default_secret',
   resave: false,
@@ -318,7 +302,7 @@ app.get('/api/products/:id', (req, res) => {
   }
 });
 
-// ---- 7. Отзывы (без изменений) ----
+// ---- 7. Отзывы ----
 app.get('/api/products/:id/reviews', (req, res) => {
   try {
     const rows = db.prepare('SELECT * FROM reviews WHERE product_id = ? ORDER BY created_at DESC').all(req.params.id);
@@ -327,7 +311,6 @@ app.get('/api/products/:id/reviews', (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
-
 app.post('/api/products/:id/reviews', (req, res) => {
   try {
     const { user_name, rating, comment } = req.body;
@@ -346,7 +329,7 @@ app.post('/api/products/:id/reviews', (req, res) => {
   }
 });
 
-// ---- 8. Избранное (без изменений) ----
+// ---- 8. Избранное ----
 app.get('/api/favorites', (req, res) => {
   if (!isAuthenticated(req)) return res.status(401).json({ error: 'Необходимо войти' });
   try {
@@ -356,7 +339,6 @@ app.get('/api/favorites', (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
-
 app.post('/api/favorites', (req, res) => {
   if (!isAuthenticated(req)) return res.status(401).json({ error: 'Необходимо войти' });
   const { productId } = req.body;
@@ -368,7 +350,6 @@ app.post('/api/favorites', (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
-
 app.delete('/api/favorites/:productId', (req, res) => {
   if (!isAuthenticated(req)) return res.status(401).json({ error: 'Необходимо войти' });
   try {
@@ -379,7 +360,7 @@ app.delete('/api/favorites/:productId', (req, res) => {
   }
 });
 
-// ---- 9. Новости (без изменений) ----
+// ---- 9. Новости ----
 app.get('/api/news/latest', (req, res) => {
   try {
     const rows = db.prepare('SELECT * FROM news WHERE is_active = 1 ORDER BY created_at DESC LIMIT 3').all();
@@ -389,7 +370,7 @@ app.get('/api/news/latest', (req, res) => {
   }
 });
 
-// ---- 10. Настройки (без изменений) ----
+// ---- 10. Настройки ----
 app.get('/api/settings', (req, res) => {
   try {
     const rows = db.prepare('SELECT key, value FROM settings').all();
@@ -401,7 +382,7 @@ app.get('/api/settings', (req, res) => {
   }
 });
 
-// ---- 11. Уведомления (без изменений) ----
+// ---- 11. Уведомления ----
 app.get('/api/notifications', (req, res) => {
   try {
     const rows = db.prepare('SELECT * FROM notifications WHERE is_read = 0 ORDER BY created_at DESC').all();
@@ -410,7 +391,6 @@ app.get('/api/notifications', (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
-
 app.post('/api/notifications/read', (req, res) => {
   try {
     db.prepare('UPDATE notifications SET is_read = 1').run();
@@ -420,7 +400,7 @@ app.post('/api/notifications/read', (req, res) => {
   }
 });
 
-// ---- 12. Фон (без изменений) ----
+// ---- 12. Фон ----
 app.get('/api/background', (req, res) => {
   try {
     const row = db.prepare('SELECT value FROM settings WHERE key = ?').get('site_background');
@@ -430,7 +410,7 @@ app.get('/api/background', (req, res) => {
   }
 });
 
-// ---- 13. Аутентификация (без изменений) ----
+// ---- 13. Аутентификация ----
 app.post('/api/auth/register', async (req, res) => {
   try {
     const { firstName, lastName, login, password } = req.body;
@@ -507,9 +487,8 @@ app.post('/api/auth/reset-password', async (req, res) => {
   }
 });
 
-// ---- 14. Корзина (без изменений) ----
+// ---- 14. Корзина ----
 app.get('/api/cart', (req, res) => res.json(req.session.cart || []));
-
 app.post('/api/cart', (req, res) => {
   try {
     const { productId, quantity } = req.body;
@@ -527,7 +506,6 @@ app.post('/api/cart', (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
-
 app.delete('/api/cart/:id', (req, res) => {
   try {
     const id = parseInt(req.params.id);
@@ -540,7 +518,7 @@ app.delete('/api/cart/:id', (req, res) => {
   }
 });
 
-// ---- 15. Заказы (без изменений) ----
+// ---- 15. Заказы ----
 app.post('/api/orders', (req, res) => {
   try {
     if (!isAuthenticated(req)) return res.status(401).json({ error: 'Необходимо войти' });
@@ -578,7 +556,6 @@ app.get('/api/orders/history', (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
-
 app.delete('/api/orders/history', (req, res) => {
   try {
     if (!isAuthenticated(req)) return res.status(401).json({ error: 'Необходимо войти' });
@@ -590,10 +567,9 @@ app.delete('/api/orders/history', (req, res) => {
 });
 
 // ============================================================
-// АДМИН-МАРШРУТЫ (новые и существующие)
+// АДМИН-МАРШРУТЫ
 // ============================================================
 
-// ---- Настройки (админ) ----
 app.put('/api/admin/settings', (req, res) => {
   try {
     if (!isAdmin(req)) return res.status(403).json({ error: 'Доступ запрещён' });
@@ -607,7 +583,6 @@ app.put('/api/admin/settings', (req, res) => {
   }
 });
 
-// ---- Админ: логин/выход/статус ----
 app.post('/api/admin/login', (req, res) => {
   try {
     const { login, password } = req.body;
@@ -619,17 +594,15 @@ app.post('/api/admin/login', (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
-
 app.post('/api/admin/logout', (req, res) => {
   req.session.destroy();
   res.json({ success: true });
 });
-
 app.get('/api/admin/status', (req, res) => {
   res.json({ isAdmin: !!req.session.isAdmin });
 });
 
-// ---- Админ: товары (обновлено с brand_id и volume_id) ----
+// ---- Админ: товары ----
 app.get('/api/admin/products', (req, res) => {
   try {
     if (!isAdmin(req)) return res.status(403).json({ error: 'Доступ запрещён' });
@@ -686,7 +659,6 @@ app.put('/api/admin/products/:id', upload.single('image'), (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
-
 app.delete('/api/admin/products/:id', (req, res) => {
   try {
     if (!isAdmin(req)) return res.status(403).json({ error: 'Доступ запрещён' });
@@ -708,7 +680,6 @@ app.get('/api/admin/categories', (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
-
 app.post('/api/admin/categories', upload.single('categoryImage'), (req, res) => {
   try {
     if (!isAdmin(req)) return res.status(403).json({ error: 'Доступ запрещён' });
@@ -724,7 +695,6 @@ app.post('/api/admin/categories', upload.single('categoryImage'), (req, res) => 
     res.status(500).json({ error: err.message });
   }
 });
-
 app.put('/api/admin/categories/:id', upload.single('categoryImage'), (req, res) => {
   try {
     if (!isAdmin(req)) return res.status(403).json({ error: 'Доступ запрещён' });
@@ -742,7 +712,6 @@ app.put('/api/admin/categories/:id', upload.single('categoryImage'), (req, res) 
     res.status(500).json({ error: err.message });
   }
 });
-
 app.delete('/api/admin/categories/:id', (req, res) => {
   try {
     if (!isAdmin(req)) return res.status(403).json({ error: 'Доступ запрещён' });
@@ -769,7 +738,6 @@ app.get('/api/admin/brands', (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
-
 app.post('/api/admin/brands', upload.single('image'), (req, res) => {
   try {
     if (!isAdmin(req)) return res.status(403).json({ error: 'Доступ запрещён' });
@@ -785,7 +753,6 @@ app.post('/api/admin/brands', upload.single('image'), (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
-
 app.put('/api/admin/brands/:id', upload.single('image'), (req, res) => {
   try {
     if (!isAdmin(req)) return res.status(403).json({ error: 'Доступ запрещён' });
@@ -803,7 +770,6 @@ app.put('/api/admin/brands/:id', upload.single('image'), (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
-
 app.delete('/api/admin/brands/:id', (req, res) => {
   try {
     if (!isAdmin(req)) return res.status(403).json({ error: 'Доступ запрещён' });
@@ -825,7 +791,6 @@ app.get('/api/admin/volumes', (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
-
 app.post('/api/admin/volumes', (req, res) => {
   try {
     if (!isAdmin(req)) return res.status(403).json({ error: 'Доступ запрещён' });
@@ -837,7 +802,6 @@ app.post('/api/admin/volumes', (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
-
 app.put('/api/admin/volumes/:id', (req, res) => {
   try {
     if (!isAdmin(req)) return res.status(403).json({ error: 'Доступ запрещён' });
@@ -850,7 +814,6 @@ app.put('/api/admin/volumes/:id', (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
-
 app.delete('/api/admin/volumes/:id', (req, res) => {
   try {
     if (!isAdmin(req)) return res.status(403).json({ error: 'Доступ запрещён' });
@@ -862,7 +825,7 @@ app.delete('/api/admin/volumes/:id', (req, res) => {
   }
 });
 
-// ---- Админ: пользователи (без изменений) ----
+// ---- Админ: пользователи ----
 app.get('/api/admin/users', (req, res) => {
   try {
     if (!isAdmin(req)) return res.status(403).json({ error: 'Доступ запрещён' });
@@ -872,7 +835,6 @@ app.get('/api/admin/users', (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
-
 app.put('/api/admin/users/:id/block', (req, res) => {
   try {
     if (!isAdmin(req)) return res.status(403).json({ error: 'Доступ запрещён' });
@@ -884,7 +846,6 @@ app.put('/api/admin/users/:id/block', (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
-
 app.delete('/api/admin/users/:id', (req, res) => {
   try {
     if (!isAdmin(req)) return res.status(403).json({ error: 'Доступ запрещён' });
@@ -896,7 +857,7 @@ app.delete('/api/admin/users/:id', (req, res) => {
   }
 });
 
-// ---- Админ: новости (без изменений) ----
+// ---- Админ: новости ----
 app.get('/api/admin/news', (req, res) => {
   try {
     if (!isAdmin(req)) return res.status(403).json({ error: 'Доступ запрещён' });
@@ -906,7 +867,6 @@ app.get('/api/admin/news', (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
-
 app.post('/api/admin/news', (req, res) => {
   try {
     if (!isAdmin(req)) return res.status(403).json({ error: 'Доступ запрещён' });
@@ -920,7 +880,6 @@ app.post('/api/admin/news', (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
-
 app.put('/api/admin/news/:id', (req, res) => {
   try {
     if (!isAdmin(req)) return res.status(403).json({ error: 'Доступ запрещён' });
@@ -933,7 +892,6 @@ app.put('/api/admin/news/:id', (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
-
 app.delete('/api/admin/news/:id', (req, res) => {
   try {
     if (!isAdmin(req)) return res.status(403).json({ error: 'Доступ запрещён' });
@@ -945,7 +903,7 @@ app.delete('/api/admin/news/:id', (req, res) => {
   }
 });
 
-// ---- Админ: заказы (без изменений) ----
+// ---- Админ: заказы ----
 app.get('/api/admin/orders', (req, res) => {
   try {
     if (!isAdmin(req)) return res.status(403).json({ error: 'Доступ запрещён' });
@@ -960,7 +918,6 @@ app.get('/api/admin/orders', (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
-
 app.put('/api/admin/orders/:id', (req, res) => {
   try {
     if (!isAdmin(req)) return res.status(403).json({ error: 'Доступ запрещён' });
@@ -986,7 +943,6 @@ app.post('/api/admin/upload-background', upload.single('background'), (req, res)
     res.status(500).json({ error: err.message });
   }
 });
-
 app.put('/api/admin/background', (req, res) => {
   try {
     if (!isAdmin(req)) return res.status(403).json({ error: 'Доступ запрещён' });
@@ -1004,7 +960,6 @@ app.get('/sitemap.xml', (req, res) => {
     const baseUrl = 'https://sushnykoff.onrender.com';
     const today = new Date().toISOString().split('T')[0];
     const products = db.prepare('SELECT id FROM products').all();
-
     let urls = `
       <url><loc>${baseUrl}/</loc><lastmod>${today}</lastmod><changefreq>daily</changefreq><priority>1.0</priority></url>
       <url><loc>${baseUrl}/about.html</loc><lastmod>${today}</lastmod><changefreq>monthly</changefreq><priority>0.8</priority></url>
@@ -1015,7 +970,6 @@ app.get('/sitemap.xml', (req, res) => {
     products.forEach(p => {
       urls += `<url><loc>${baseUrl}/product.html?id=${p.id}</loc><lastmod>${today}</lastmod><changefreq>weekly</changefreq><priority>0.9</priority></url>`;
     });
-
     const xml = `<?xml version="1.0" encoding="UTF-8"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">${urls}</urlset>`;
     res.header('Content-Type', 'application/xml');
     res.send(xml);

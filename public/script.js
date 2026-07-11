@@ -988,6 +988,167 @@ if (switchToRegister) {
 }
 
 // ============================================================
+// ОТЛАДКА: страница brands.html
+// ============================================================
+
+// Переопределяем функцию loadBrands для подробных логов
+const originalLoadBrands = loadBrands;
+loadBrands = function(categoryId) {
+  console.log('📡 loadBrands вызвана с categoryId:', categoryId);
+  fetch(`/api/brands?categoryId=${categoryId}`)
+    .then(res => {
+      console.log('📡 Статус /brands:', res.status);
+      return res.json();
+    })
+    .then(brands => {
+      console.log('📦 Бренды получены:', brands);
+      const grid = document.getElementById('brandsGrid');
+      console.log('🔍 Элемент #brandsGrid:', grid);
+      if (!grid) {
+        console.error('❌ #brandsGrid не найден!');
+        return;
+      }
+      if (!brands.length) {
+        grid.innerHTML = '<p style="text-align:center; padding:20px; color:#7f8c8d;">Брендов в этой категории пока нет.</p>';
+        return;
+      }
+      grid.innerHTML = brands.map(b => `
+        <div class="brand-card" data-id="${b.id}">
+          ${b.image ? `<img src="${b.image}" alt="${b.name}">` : '<div class="placeholder">📦</div>'}
+          <div class="brand-info">
+            <div class="name">${b.name}</div>
+          </div>
+        </div>
+      `).join('');
+      console.log('✅ Бренды отрендерены');
+      // Обработчики кликов
+      document.querySelectorAll('.brand-card').forEach(el => {
+        el.addEventListener('click', function() {
+          window.location.href = `/brand.html?id=${this.dataset.id}`;
+        });
+      });
+    })
+    .catch(err => console.error('❌ Ошибка загрузки брендов:', err));
+};
+
+// Переопределяем функцию loadBrandsCategoryProducts
+const originalLoadCategoryProducts = loadBrandsCategoryProducts;
+loadBrandsCategoryProducts = function(categoryId) {
+  const search = document.getElementById('brandsSearchInput')?.value?.trim() || '';
+  const url = new URL('/api/products', window.location.origin);
+  url.searchParams.append('category', categoryId);
+  if (search) url.searchParams.append('search', search);
+  url.searchParams.append('page', currentPage || 1);
+  url.searchParams.append('limit', 12);
+  console.log('📡 Запрос товаров:', url.toString());
+  fetch(url)
+    .then(res => {
+      console.log('📡 Статус /products:', res.status);
+      return res.json();
+    })
+    .then(data => {
+      console.log('📦 Товары получены:', data);
+      products = data.items || [];
+      totalPages = data.totalPages || 1;
+      currentPage = data.page || 1;
+      // Проверяем, что productsGrid существует
+      const grid = document.getElementById('productsGrid');
+      console.log('🔍 Элемент #productsGrid:', grid);
+      if (!grid) {
+        console.error('❌ #productsGrid не найден!');
+        return;
+      }
+      renderProducts();
+      renderPagination();
+    })
+    .catch(err => console.error('❌ Ошибка загрузки товаров:', err));
+};
+
+// Также переопределим renderProducts, чтобы выводить лог
+const originalRenderProducts = renderProducts;
+renderProducts = function() {
+  const grid = document.getElementById('productsGrid');
+  console.log('🔍 renderProducts вызвана, #productsGrid:', grid);
+  if (!grid) {
+    console.error('❌ #productsGrid не найден в renderProducts');
+    return;
+  }
+  if (!products.length) {
+    grid.innerHTML = `<p style="grid-column:1/-1; text-align:center; padding:40px; color:#7f8c8d;">Товары не найдены</p>`;
+    return;
+  }
+  grid.innerHTML = products.map(p => {
+    const isFav = favorites.includes(p.id);
+    return `
+    <div class="product-card" data-id="${p.id}">
+      <img class="product-img" src="${p.image || 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="100" height="100"%3E%3Crect width="100" height="100" fill="%23f0f2f5"/%3E%3Ctext x="50" y="55" text-anchor="middle" font-size="40" dy=".35em"%3E🥤%3C/text%3E%3C/svg%3E'}" alt="${p.name}">
+      <div class="product-info">
+        <div class="name">${p.name}</div>
+        <div class="price">${p.price} ₽</div>
+        ${p.volume_name ? `<div class="type">${p.volume_name}</div>` : ''}
+        <div class="actions">
+          <button class="add-btn" data-id="${p.id}">➕ В корзину</button>
+          <button class="fav-btn ${isFav?'active':''}" data-id="${p.id}">${isFav?'❤️':'🤍'}</button>
+        </div>
+      </div>
+    </div>`;
+  }).join('');
+  console.log('✅ Товары отрендерены, количество:', products.length);
+  // Обработчики
+  document.querySelectorAll('.add-btn').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      addToCart(parseInt(btn.dataset.id));
+    });
+  });
+  document.querySelectorAll('.fav-btn').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      toggleFavorite(parseInt(btn.dataset.id));
+    });
+  });
+  document.querySelectorAll('.product-card').forEach(card => {
+    card.addEventListener('click', function(e) {
+      if (e.target.closest('button')) return;
+      window.location.href = `/product.html?id=${this.dataset.id}`;
+    });
+  });
+};
+
+// Переопределим renderPagination с логами
+const originalRenderPagination = renderPagination;
+renderPagination = function() {
+  const pag = document.getElementById('pagination');
+  console.log('🔍 renderPagination вызвана, #pagination:', pag);
+  if (!pag) {
+    console.error('❌ #pagination не найден');
+    return;
+  }
+  if (totalPages <= 1) {
+    pag.innerHTML = '';
+    return;
+  }
+  let html = '';
+  for (let i = 1; i <= totalPages; i++) {
+    html += `<button class="page-btn ${i===currentPage?'active':''}" data-page="${i}">${i}</button>`;
+  }
+  pag.innerHTML = html;
+  pag.querySelectorAll('.page-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      currentPage = parseInt(btn.dataset.page);
+      if (window.location.pathname.includes('brand.html')) {
+        loadProductsForBrand(currentBrandId, currentVolumeId);
+      } else if (window.location.pathname.includes('brands.html')) {
+        const params = new URLSearchParams(window.location.search);
+        const categoryId = params.get('category');
+        if (categoryId) loadBrandsCategoryProducts(categoryId);
+      }
+    });
+  });
+  console.log('✅ Пагинация отрендерена');
+};
+
+// ============================================================
 // ИНИЦИАЛИЗАЦИЯ
 // ============================================================
 function init() {
