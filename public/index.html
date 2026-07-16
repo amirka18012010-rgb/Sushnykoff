@@ -18,8 +18,10 @@
       <h1>🥤 <span>Sushnykoff</span></h1>
     </a>
     <div class="header-search">
-      <input type="text" id="headerSearchInput" placeholder="Поиск...">
-      <button id="headerSearchBtn">🔍</button>
+      <form autocomplete="off" onsubmit="handleHeaderSearch(); return false;" style="display:flex; flex:1; gap:0; width:100%;">
+        <input type="text" id="headerSearchInput" placeholder="Поиск..." name="search-query" style="flex:1; border:none; background:transparent; padding:10px 0; font-size:15px; outline:none; min-width:0;">
+        <button type="submit" id="headerSearchBtn" style="background:#27ae60; border:none; color:white; width:40px; height:40px; border-radius:40px; display:flex; align-items:center; justify-content:center; font-size:18px; cursor:pointer; transition:background 0.2s; flex-shrink:0;">🔍</button>
+      </form>
     </div>
     <div class="header-actions">
       <a href="https://wa.me/79889369730?text=Здравствуйте!%20У%20меня%20есть%20вопрос" target="_blank" class="header-icon" title="WhatsApp">
@@ -74,6 +76,7 @@
       <a href="/about.html">О нас</a>
       <a href="/contacts.html">Контакты</a>
       <a href="/map.html">Карта</a>
+      <a href="/favorites.html">❤️ Избранное</a>
       <a href="https://wa.me/79889369730?text=Здравствуйте!%20У%20меня%20есть%20вопрос" target="_blank" class="whatsapp-link-burger">💬 WhatsApp</a>
     </div>
   </div>
@@ -83,18 +86,17 @@
 </div>
 
 <!-- ===== МОДАЛКИ ===== -->
-<!-- ... (они остаются прежними, но я обновлю модалку входа) ... -->
 
-<!-- ---- ВХОД (обновлён с ссылкой на регистрацию) ---- -->
+<!-- ---- ВХОД ---- -->
 <div class="auth-overlay" id="loginOverlay">
   <div class="auth-panel">
     <div class="auth-header">
       <h2>🔐 Вход</h2>
       <button class="close-btn" id="closeLoginBtn">&times;</button>
     </div>
-    <form id="loginForm">
-      <input type="text" id="loginInput" placeholder="Логин" required>
-      <input type="password" id="passwordInput" placeholder="Пароль" required>
+    <form id="loginForm" autocomplete="off">
+      <input type="text" id="loginInput" placeholder="Логин" required autocomplete="off">
+      <input type="password" id="passwordInput" placeholder="Пароль" required autocomplete="off">
       <button type="submit">Войти</button>
     </form>
     <div id="loginError" style="color:red; margin-top:10px;"></div>
@@ -102,14 +104,12 @@
       <button id="forgotLoginBtn" style="background:none; border:none; color:#3498db; cursor:pointer; font-size:14px;">Забыли логин?</button>
       <button id="forgotPasswordBtn" style="background:none; border:none; color:#3498db; cursor:pointer; font-size:14px;">Забыли пароль?</button>
     </div>
-    <!-- Новая ссылка на регистрацию -->
     <div style="text-align:center; margin-top:15px; border-top:1px solid #ecf0f1; padding-top:15px;">
       Нет аккаунта? <a href="#" id="switchToRegister" style="color:#3498db; font-weight:600; text-decoration:none;">Зарегистрироваться</a>
     </div>
   </div>
 </div>
 
-<!-- ---- ОСТАЛЬНЫЕ МОДАЛКИ (регистрация, восстановление, уведомления, новости) без изменений ---- -->
 <!-- ---- КОРЗИНА ---- -->
 <div class="cart-overlay" id="cartOverlay">
   <div class="cart-panel">
@@ -126,7 +126,6 @@
   </div>
 </div>
 
-
 <!-- ---- РЕГИСТРАЦИЯ ---- -->
 <div class="auth-overlay" id="registerOverlay">
   <div class="auth-panel">
@@ -134,14 +133,17 @@
       <h2>📝 Регистрация</h2>
       <button class="close-btn" id="closeRegisterBtn">&times;</button>
     </div>
-    <form id="registerForm">
-      <input type="text" id="regFirstName" placeholder="Имя" required>
-      <input type="text" id="regLastName" placeholder="Фамилия" required>
-      <input type="text" id="regLogin" placeholder="Логин" required>
-      <input type="password" id="regPassword" placeholder="Пароль" required>
+    <form id="registerForm" autocomplete="off">
+      <input type="text" id="regFirstName" placeholder="Имя" required autocomplete="off">
+      <input type="text" id="regLastName" placeholder="Фамилия" required autocomplete="off">
+      <input type="text" id="regLogin" placeholder="Логин" required autocomplete="off">
+      <input type="password" id="regPassword" placeholder="Пароль" required autocomplete="off">
       <button type="submit">Зарегистрироваться</button>
     </form>
     <div id="registerError" style="color:red; margin-top:10px;"></div>
+    <div style="text-align:center; margin-top:15px; border-top:1px solid #ecf0f1; padding-top:15px;">
+      Уже есть аккаунт? <a href="#" id="switchToLogin" style="color:#3498db; font-weight:600; text-decoration:none;">Войти</a>
+    </div>
   </div>
 </div>
 
@@ -154,15 +156,15 @@
     </div>
     <div id="recoverStep1">
       <p>Введите имя и фамилию для поиска</p>
-      <input type="text" id="recoverFirstName" placeholder="Имя">
-      <input type="text" id="recoverLastName" placeholder="Фамилия">
+      <input type="text" id="recoverFirstName" placeholder="Имя" autocomplete="off">
+      <input type="text" id="recoverLastName" placeholder="Фамилия" autocomplete="off">
       <button id="recoverSearchBtn">Найти</button>
     </div>
     <div id="recoverStep2" style="display:none;">
       <p>Найден логин: <strong id="recoveredLogin"></strong></p>
       <div id="resetPasswordSection">
         <p>Введите новый пароль, чтобы его сбросить</p>
-        <input type="password" id="recoverNewPassword" placeholder="Новый пароль">
+        <input type="password" id="recoverNewPassword" placeholder="Новый пароль" autocomplete="off">
         <button id="recoverResetBtn">Сбросить пароль</button>
       </div>
     </div>
@@ -195,6 +197,7 @@
   </div>
 </div>
 
+<script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
 <script src="script.js"></script>
 </body>
 </html>

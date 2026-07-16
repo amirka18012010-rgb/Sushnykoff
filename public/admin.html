@@ -71,6 +71,7 @@
         <input type="hidden" id="editId" value="">
         <div><label>Название *</label><input type="text" id="productName" required></div>
         <div><label>Цена (₽) *</label><input type="number" id="productPrice" required min="0" step="0.01"></div>
+        <div><label>Оптовая цена (₽)</label><input type="number" id="productWholesalePrice" min="0" step="0.01" placeholder="Необязательно"></div>
         <div><label>Категория *</label><select id="productCategory" required></select></div>
         <div><label>Бренд *</label><select id="productBrand" required></select></div>
         <div><label>Объём *</label><select id="productVolume" required></select></div>
@@ -81,13 +82,13 @@
       <div id="adminProductList"></div>
     </div>
 
-    <!-- Вкладка: Категории (с фото) -->
+    <!-- Вкладка: Категории -->
     <div id="tab-categories" class="tab-content">
       <h3 style="margin-bottom:16px;">Управление категориями</h3>
       <form id="categoryForm" class="admin-form">
         <div class="full-width">
           <label>Название категории *</label><input type="text" id="categoryName" placeholder="Например: Минеральная вода" required>
-          <label style="margin-top:10px;">Иконка (эмодзи) — необязательно</label><input type="text" id="categoryIcon" placeholder="💧">
+          <label style="margin-top:10px;">Иконка (эмодзи)</label><input type="text" id="categoryIcon" placeholder="💧">
           <label style="margin-top:10px;">Фото (ссылкой или файлом)</label>
           <input type="text" id="categoryImageUrl" placeholder="https://example.com/cat.jpg">
           <input type="file" id="categoryImageFile" accept="image/*" style="margin-top:6px;">
@@ -326,6 +327,7 @@
               <div class="item-info">
                 <span class="name">${p.name}</span>
                 <span class="meta">${p.category_name || 'Без кат.'} • ${p.brand_name || 'Без бр.'} • ${p.volume_name || 'Без объёма'} • ${p.price} ₽</span>
+                ${p.wholesale_price ? `<span class="meta">Опт: ${p.wholesale_price} ₽</span>` : ''}
               </div>
             </div>
             <div class="item-actions">
@@ -342,6 +344,7 @@
               document.getElementById('editId').value = id;
               document.getElementById('productName').value = product.name;
               document.getElementById('productPrice').value = product.price;
+              document.getElementById('productWholesalePrice').value = product.wholesale_price || '';
               document.getElementById('productCategory').value = product.category_id;
               document.getElementById('productBrand').value = product.brand_id;
               document.getElementById('productVolume').value = product.volume_id;
@@ -368,6 +371,7 @@
     const id = document.getElementById('editId').value;
     const name = document.getElementById('productName').value;
     const price = document.getElementById('productPrice').value;
+    const wholesale_price = document.getElementById('productWholesalePrice').value.trim();
     const category_id = document.getElementById('productCategory').value;
     const brand_id = document.getElementById('productBrand').value;
     const volume_id = document.getElementById('productVolume').value;
@@ -377,6 +381,7 @@
     const formData = new FormData();
     formData.append('name', name);
     formData.append('price', price);
+    formData.append('wholesale_price', wholesale_price);
     formData.append('category_id', category_id);
     formData.append('brand_id', brand_id);
     formData.append('volume_id', volume_id);
@@ -398,7 +403,7 @@
       });
   });
 
-  // ---- Категории (админ) с фото ----
+  // ---- Категории (админ) ----
   function loadCategoriesAdmin() {
     fetch('/api/admin/categories')
       .then(r => r.json())

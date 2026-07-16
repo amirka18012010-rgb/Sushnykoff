@@ -1018,3 +1018,59 @@ body.has-bg .side-header {
     font-size: 15px;
   }
 }
+
+.price-block {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px;
+  font-size: 20px;
+  font-weight: 700;
+}
+.price {
+  color: #27ae60;
+}
+.price-separator {
+  color: #bdc3c7;
+}
+.wholesale-price {
+  color: #e67e22;
+  font-weight: 600;
+}
+
+.filter-section form:focus-within {
+  border-color: #27ae60 !important;
+  background: white !important;
+  box-shadow: 0 0 0 4px rgba(39,174,96,0.08);
+}
+
+/* ---- Подсветка полей ввода при фокусе ---- */
+.header-search input:focus {
+  border-color: #27ae60 !important;
+  box-shadow: 0 0 0 4px rgba(39,174,96,0.15) !important;
+}
+.filter-section input:focus,
+.filter-section select:focus {
+  border-color: #27ae60 !important;
+  box-shadow: 0 0 0 4px rgba(39,174,96,0.15) !important;
+}
+
+/* ---- Отображение цен ---- */
+.price-block {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px;
+  font-size: 20px;
+  font-weight: 700;
+}
+.price {
+  color: #27ae60;
+}
+.price-separator {
+  color: #bdc3c7;
+}
+.wholesale-price {
+  color: #e67e22;
+  font-weight: 600;
+}

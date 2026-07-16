@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+\<!DOCTYPE html>
 <html lang="ru">
 <head>
   <meta charset="UTF-8">
@@ -30,11 +30,20 @@
       font-weight: 700;
       color: #1a1a2e;
     }
-    .product-container .price {
+    .product-container .price-block {
       font-size: 24px;
       font-weight: 700;
-      color: #27ae60;
       margin: 10px 0;
+    }
+    .product-container .price {
+      color: #27ae60;
+    }
+    .product-container .price-separator {
+      color: #bdc3c7;
+      margin: 0 4px;
+    }
+    .product-container .wholesale-price {
+      color: #e67e22;
     }
     .product-container .rating {
       font-size: 18px;
@@ -43,6 +52,44 @@
     .product-container .description {
       margin: 15px 0;
       color: #2c3e50;
+    }
+    .product-container .price-selector {
+      display: flex;
+      gap: 12px;
+      margin: 15px 0;
+      flex-wrap: wrap;
+    }
+    .product-container .price-selector button {
+      padding: 10px 24px;
+      border: 2px solid #27ae60;
+      border-radius: 40px;
+      background: transparent;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s;
+      font-size: 16px;
+      color: #27ae60;
+    }
+    .product-container .price-selector button.active {
+      background: #27ae60;
+      color: white;
+    }
+    .product-container .price-selector button:hover:not(.active) {
+      background: rgba(39,174,96,0.1);
+    }
+    .add-btn {
+      background: #27ae60;
+      color: white;
+      border: none;
+      padding: 12px 30px;
+      border-radius: 50px;
+      font-size: 16px;
+      font-weight: 600;
+      cursor: pointer;
+      margin-top: 10px;
+    }
+    .add-btn:hover {
+      background: #1e8449;
     }
     .review-form {
       margin: 30px 0;
@@ -83,19 +130,14 @@
       color: #7f8c8d;
       font-size: 14px;
     }
-    .add-btn {
-      background: #27ae60;
-      color: white;
-      border: none;
-      padding: 12px 30px;
-      border-radius: 50px;
-      font-size: 16px;
-      font-weight: 600;
-      cursor: pointer;
-      margin-top: 10px;
+    #similarProductsGrid {
+      grid-template-columns: repeat(4, 1fr);
     }
-    .add-btn:hover {
-      background: #1e8449;
+    @media (max-width: 992px) {
+      #similarProductsGrid { grid-template-columns: repeat(2, 1fr); }
+    }
+    @media (max-width: 600px) {
+      #similarProductsGrid { grid-template-columns: 1fr; }
     }
   </style>
 </head>
@@ -107,8 +149,10 @@
       <h1>🥤 <span>Sushnykoff</span></h1>
     </a>
     <div class="header-search">
-      <input type="text" id="headerSearchInput" placeholder="Поиск...">
-      <button id="headerSearchBtn">🔍</button>
+      <form autocomplete="off" onsubmit="handleHeaderSearch(); return false;" style="display:flex; flex:1; gap:0; width:100%;">
+        <input type="text" id="headerSearchInput" placeholder="Поиск..." name="search-query" style="flex:1; border:none; background:transparent; padding:10px 0; font-size:15px; outline:none; min-width:0;">
+        <button type="submit" id="headerSearchBtn" style="background:#27ae60; border:none; color:white; width:40px; height:40px; border-radius:40px; display:flex; align-items:center; justify-content:center; font-size:18px; cursor:pointer; transition:background 0.2s; flex-shrink:0;">🔍</button>
+      </form>
     </div>
     <div class="header-actions">
       <a href="https://wa.me/79889369730?text=Здравствуйте!%20У%20меня%20есть%20вопрос" target="_blank" class="header-icon" title="WhatsApp">
@@ -152,7 +196,7 @@
     </div>
   </header>
 
-  <!-- ===== БУРГЕР ===== -->
+  <!-- БУРГЕР -->
   <div class="burger-wrapper">
     <button class="burger-btn" id="burgerBtn" aria-label="Меню">
       <span></span>
@@ -163,11 +207,12 @@
       <a href="/about.html">О нас</a>
       <a href="/contacts.html">Контакты</a>
       <a href="/map.html">Карта</a>
+      <a href="/favorites.html">❤️ Избранное</a>
       <a href="https://wa.me/79889369730?text=Здравствуйте!%20У%20меня%20есть%20вопрос" target="_blank" class="whatsapp-link-burger">💬 WhatsApp</a>
     </div>
   </div>
 
-  <!-- Навигационная цепочка -->
+  <!-- Хлебные крошки -->
   <div class="breadcrumbs" id="breadcrumbs"></div>
 
   <!-- Контент товара -->
@@ -187,14 +232,134 @@
       <textarea id="reviewComment" placeholder="Ваш отзыв"></textarea>
       <button id="submitReview">Отправить</button>
     </div>
+
+    <!-- Блок похожих товаров -->
+    <div id="similarProducts" style="margin-top:40px;">
+      <h3 style="font-size:24px; font-weight:700; margin-bottom:20px;">🔄 Похожие товары</h3>
+      <div id="similarProductsGrid" class="products-grid"></div>
+    </div>
   </div>
 </div>
 
+<!-- ===== МОДАЛКИ ===== -->
+<!-- ---- ВХОД ---- -->
+<div class="auth-overlay" id="loginOverlay">
+  <div class="auth-panel">
+    <div class="auth-header">
+      <h2>🔐 Вход</h2>
+      <button class="close-btn" id="closeLoginBtn">&times;</button>
+    </div>
+    <form id="loginForm" autocomplete="off">
+      <input type="text" id="loginInput" placeholder="Логин" required autocomplete="off">
+      <input type="password" id="passwordInput" placeholder="Пароль" required autocomplete="off">
+      <button type="submit">Войти</button>
+    </form>
+    <div id="loginError" style="color:red; margin-top:10px;"></div>
+    <div style="margin-top:10px; display:flex; flex-wrap:wrap; justify-content:space-between; gap:8px;">
+      <button id="forgotLoginBtn" style="background:none; border:none; color:#3498db; cursor:pointer; font-size:14px;">Забыли логин?</button>
+      <button id="forgotPasswordBtn" style="background:none; border:none; color:#3498db; cursor:pointer; font-size:14px;">Забыли пароль?</button>
+    </div>
+    <div style="text-align:center; margin-top:15px; border-top:1px solid #ecf0f1; padding-top:15px;">
+      Нет аккаунта? <a href="#" id="switchToRegister" style="color:#3498db; font-weight:600; text-decoration:none;">Зарегистрироваться</a>
+    </div>
+  </div>
+</div>
+
+<!-- ---- КОРЗИНА ---- -->
+<div class="cart-overlay" id="cartOverlay">
+  <div class="cart-panel">
+    <div class="cart-header">
+      <h2>🛒 Корзина</h2>
+      <button class="close-btn" id="closeCartBtn">&times;</button>
+    </div>
+    <ul class="cart-items" id="cartItems"></ul>
+    <div class="cart-total">
+      <span>Итого:</span>
+      <span id="cartTotal">0 ₽</span>
+    </div>
+    <button class="checkout-btn" id="checkoutBtn">Оформить заказ</button>
+  </div>
+</div>
+
+<!-- ---- РЕГИСТРАЦИЯ ---- -->
+<div class="auth-overlay" id="registerOverlay">
+  <div class="auth-panel">
+    <div class="auth-header">
+      <h2>📝 Регистрация</h2>
+      <button class="close-btn" id="closeRegisterBtn">&times;</button>
+    </div>
+    <form id="registerForm" autocomplete="off">
+      <input type="text" id="regFirstName" placeholder="Имя" required autocomplete="off">
+      <input type="text" id="regLastName" placeholder="Фамилия" required autocomplete="off">
+      <input type="text" id="regLogin" placeholder="Логин" required autocomplete="off">
+      <input type="password" id="regPassword" placeholder="Пароль" required autocomplete="off">
+      <button type="submit">Зарегистрироваться</button>
+    </form>
+    <div id="registerError" style="color:red; margin-top:10px;"></div>
+    <div style="text-align:center; margin-top:15px; border-top:1px solid #ecf0f1; padding-top:15px;">
+      Уже есть аккаунт? <a href="#" id="switchToLogin" style="color:#3498db; font-weight:600; text-decoration:none;">Войти</a>
+    </div>
+  </div>
+</div>
+
+<!-- ---- ВОССТАНОВЛЕНИЕ ---- -->
+<div class="auth-overlay" id="recoverOverlay">
+  <div class="auth-panel">
+    <div class="auth-header">
+      <h2>🔑 Восстановление</h2>
+      <button class="close-btn" id="closeRecoverBtn">&times;</button>
+    </div>
+    <div id="recoverStep1">
+      <p>Введите имя и фамилию для поиска</p>
+      <input type="text" id="recoverFirstName" placeholder="Имя" autocomplete="off">
+      <input type="text" id="recoverLastName" placeholder="Фамилия" autocomplete="off">
+      <button id="recoverSearchBtn">Найти</button>
+    </div>
+    <div id="recoverStep2" style="display:none;">
+      <p>Найден логин: <strong id="recoveredLogin"></strong></p>
+      <div id="resetPasswordSection">
+        <p>Введите новый пароль, чтобы его сбросить</p>
+        <input type="password" id="recoverNewPassword" placeholder="Новый пароль" autocomplete="off">
+        <button id="recoverResetBtn">Сбросить пароль</button>
+      </div>
+    </div>
+    <div id="recoverMessage" style="color:green; margin-top:10px;"></div>
+    <div id="recoverError" style="color:red; margin-top:10px;"></div>
+  </div>
+</div>
+
+<!-- ---- УВЕДОМЛЕНИЯ ---- -->
+<div class="auth-overlay" id="notifOverlay">
+  <div class="auth-panel" style="max-width:500px;">
+    <div class="auth-header">
+      <h2>🔔 Уведомления</h2>
+      <button class="close-btn" id="closeNotifBtn">&times;</button>
+    </div>
+    <div id="notifList"></div>
+    <button id="markReadBtn" style="margin-top:10px; background:#27ae60; color:white; border:none; padding:10px; border-radius:50px; width:100%; font-weight:600;">Отметить все как прочитанные</button>
+  </div>
+</div>
+
+<!-- ---- НОВОСТИ ---- -->
+<div class="auth-overlay" id="newsOverlay">
+  <div class="auth-panel" style="max-width:600px;">
+    <div class="auth-header">
+      <h2>📢 Новости и акции</h2>
+      <button class="close-btn" id="closeNewsBtn">&times;</button>
+    </div>
+    <div id="newsContent"></div>
+    <button id="newsCloseBtn" style="background:#27ae60; color:white; border:none; padding:10px 20px; border-radius:50px; margin-top:15px; width:100%;">Закрыть</button>
+  </div>
+</div>
+
+<script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
 <script src="script.js"></script>
 <script>
-  // Получаем ID из URL
+  // ---- Логика товара (с выбором цены) ----
   const urlParams = new URLSearchParams(window.location.search);
   const productId = urlParams.get('id');
+
+  let selectedPriceType = 'retail';
 
   if (!productId) {
     document.getElementById('productContainer').innerHTML = '<p>Товар не найден</p>';
@@ -207,22 +372,51 @@
     fetch(`/api/products/${productId}`)
       .then(res => res.json())
       .then(product => {
+        const hasWholesale = product.wholesale_price && product.wholesale_price > 0;
+        let priceHtml = `<span class="price">${product.price} ₽</span>`;
+        if (hasWholesale) {
+          priceHtml += ` <span class="price-separator">/</span> <span class="wholesale-price">${product.wholesale_price} ₽</span>`;
+        }
+
+        let selectorHtml = '';
+        if (hasWholesale) {
+          selectorHtml = `
+            <div class="price-selector">
+              <button class="price-btn active" data-price="retail">🛒 Розница</button>
+              <button class="price-btn" data-price="wholesale">📦 Опт</button>
+            </div>
+          `;
+        }
+
         const html = `
-          <img src="${product.image || 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="200" height="200"%3E%3Crect width="200" height="200" fill="%23f0f2f5"/%3E%3Ctext x="100" y="110" text-anchor="middle" font-size="40" dy=".35em"%3E🥤%3C/text%3E%3C/svg%3E'}" alt="${product.name}">
+          <img src="${product.image || 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="200" height="200"%3E%3Crect width="200" height="200" fill="%23f0f2f5"/%3E%3Ctext x="100" y="110" text-anchor="middle" font-size="40" dy=".35em"%3E🥤%3C/text%3E%3C/svg%3E'}" alt="${product.name}" loading="lazy">
           <div class="name">${product.name}</div>
-          <div class="price">${product.price} ₽</div>
+          <div class="price-block">${priceHtml}</div>
+          ${selectorHtml}
           <div class="rating">⭐ ${product.avg_rating ? product.avg_rating.toFixed(1) : 'Нет оценок'}</div>
           <div class="description">${product.description || 'Описание отсутствует'}</div>
           <button class="add-btn" data-id="${product.id}">➕ Добавить в корзину</button>
         `;
         document.getElementById('productDetails').innerHTML = html;
-        document.querySelector('.add-btn').addEventListener('click', function() {
-          addToCart(parseInt(this.dataset.id));
+
+        document.querySelectorAll('.price-btn').forEach(btn => {
+          btn.addEventListener('click', function() {
+            document.querySelectorAll('.price-btn').forEach(b => b.classList.remove('active'));
+            this.classList.add('active');
+            selectedPriceType = this.dataset.price;
+          });
         });
-        // Обновляем хлебные крошки
+
+        document.querySelector('.add-btn').addEventListener('click', function() {
+          addToCart(parseInt(this.dataset.id), 1, selectedPriceType);
+        });
+
         if (typeof updateBreadcrumbs === 'function') {
           setTimeout(updateBreadcrumbs, 100);
         }
+
+        // Загружаем похожие товары
+        loadSimilarProducts(product);
       })
       .catch(err => console.error('Ошибка загрузки товара:', err));
   }
@@ -275,20 +469,78 @@
       .catch(err => alert('Ошибка отправки: ' + err.message));
   });
 
-  // Функция добавления в корзину (синхронизирована с основным скриптом)
-  function addToCart(productId) {
-    fetch('/api/cart', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ productId, quantity: 1 })
-    })
+  // ---- Похожие товары ----
+  function loadSimilarProducts(product) {
+    const categoryId = product.category_id;
+    const brandId = product.brand_id;
+    fetch(`/api/products?category=${categoryId}&limit=7&sort=random`)
       .then(res => res.json())
-      .then(cart => {
-        const count = cart.reduce((sum, item) => sum + item.quantity, 0);
-        document.getElementById('cartCount').textContent = count;
-        alert('Товар добавлен в корзину!');
+      .then(data => {
+        let similar = data.items || [];
+        similar = similar.filter(p => p.id != product.id);
+        if (similar.length < 4) {
+          fetch(`/api/products?brandId=${brandId}&limit=7&sort=random`)
+            .then(res2 => res2.json())
+            .then(data2 => {
+              let more = data2.items || [];
+              more = more.filter(p => p.id != product.id);
+              const all = [...similar, ...more];
+              const unique = all.filter((v, i, a) => a.findIndex(p => p.id === v.id) === i);
+              renderSimilarProducts(unique.slice(0, 6));
+            });
+        } else {
+          renderSimilarProducts(similar.slice(0, 6));
+        }
       })
-      .catch(err => alert('Ошибка добавления в корзину'));
+      .catch(err => console.error('Ошибка загрузки похожих товаров:', err));
+  }
+
+  function renderSimilarProducts(products) {
+    const grid = document.getElementById('similarProductsGrid');
+    if (!grid) return;
+    if (!products.length) {
+      grid.innerHTML = '<p style="grid-column:1/-1; text-align:center; color:#7f8c8d;">Нет похожих товаров</p>';
+      return;
+    }
+    grid.innerHTML = products.map(p => {
+      const hasWholesale = p.wholesale_price && p.wholesale_price > 0;
+      let priceHtml = `<span class="price">${p.price} ₽</span>`;
+      if (hasWholesale) {
+        priceHtml += ` <span class="price-separator">/</span> <span class="wholesale-price">${p.wholesale_price} ₽</span>`;
+      }
+      return `
+      <div class="product-card" data-id="${p.id}">
+        <img class="product-img" src="${p.image || 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="100" height="100"%3E%3Crect width="100" height="100" fill="%23f0f2f5"/%3E%3Ctext x="50" y="55" text-anchor="middle" font-size="40" dy=".35em"%3E🥤%3C/text%3E%3C/svg%3E'}" alt="${p.name}" loading="lazy">
+        <div class="product-info">
+          <div class="name">${p.name}</div>
+          <div class="price-block">${priceHtml}</div>
+          ${p.volume_name ? `<div class="type">${p.volume_name}</div>` : ''}
+          <div class="actions" style="display:flex; gap:6px; flex-wrap:wrap; align-items:center;">
+            <button class="add-btn retail" data-id="${p.id}" data-price="retail">🛒 Розница</button>
+            ${hasWholesale ? `<button class="add-btn wholesale" data-id="${p.id}" data-price="wholesale">📦 Опт</button>` : ''}
+          </div>
+        </div>
+      </div>`;
+    }).join('');
+
+    grid.querySelectorAll('.add-btn.retail').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        addToCart(parseInt(btn.dataset.id), 1, 'retail');
+      });
+    });
+    grid.querySelectorAll('.add-btn.wholesale').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        addToCart(parseInt(btn.dataset.id), 1, 'wholesale');
+      });
+    });
+    grid.querySelectorAll('.product-card').forEach(card => {
+      card.addEventListener('click', function(e) {
+        if (e.target.closest('button')) return;
+        window.location.href = `/product.html?id=${this.dataset.id}`;
+      });
+    });
   }
 </script>
 </body>

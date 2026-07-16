@@ -7,6 +7,8 @@ const path = require('path');
 const fs = require('fs');
 const bcrypt = require('bcrypt');
 const Database = require('better-sqlite3');
+const http = require('http');
+const { Server } = require('socket.io');
 
 // ---- Создаём папки ----
 ['./uploads', './uploads/backgrounds', './uploads/brands', './uploads/categories', './db'].forEach(dir => {
@@ -14,6 +16,13 @@ const Database = require('better-sqlite3');
 });
 
 const app = express();
+const server = http.createServer(app);
+const io = new Server(server, {
+  cors: {
+    origin: '*',
+    methods: ['GET', 'POST']
+  }
+});
 const PORT = process.env.PORT || 3000;
 
 // ---- Подключение к БД ----
@@ -51,9 +60,7 @@ db.exec(`
     image TEXT,
     description TEXT,
     avg_rating REAL DEFAULT 0,
-    FOREIGN KEY (category_id) REFERENCES categories(id),
-    FOREIGN KEY (brand_id) REFERENCES brands(id),
-    FOREIGN KEY (volume_id) REFERENCES volumes(id)
+    wholesale_price REAL
   );
   CREATE TABLE IF NOT EXISTS users (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -117,6 +124,14 @@ db.exec(`
   );
 `);
 
+// ---- Проверяем наличие колонки wholesale_price ----
+const tableInfo = db.prepare("PRAGMA table_info(products)").all();
+const hasWholesale = tableInfo.some(col => col.name === 'wholesale_price');
+if (!hasWholesale) {
+  db.exec("ALTER TABLE products ADD COLUMN wholesale_price REAL");
+  console.log('✅ Добавлена колонка wholesale_price в таблицу products');
+}
+
 // ---- Начальные настройки ----
 const defaultSettings = {
   about_text: 'Мы — команда энтузиастов, которые любят вкусные напитки.',
@@ -175,10 +190,10 @@ function isBlocked(userId) {
 }
 
 // ============================================================
-// МАРШРУТЫ ДЛЯ НОВОЙ СТРУКТУРЫ КАТАЛОГА
+// МАРШРУТЫ
 // ============================================================
 
-// ---- 1. Категории (с иконками и фото) ----
+// ---- 1. Категории ----
 app.get('/api/categories', (req, res) => {
   try {
     const rows = db.prepare('SELECT * FROM categories ORDER BY name').all();
@@ -206,7 +221,7 @@ app.get('/api/brands', (req, res) => {
   }
 });
 
-// ---- 3. Получить бренд по ID ----
+// ---- 3. Бренд по ID ----
 app.get('/api/brands/:id', (req, res) => {
   try {
     const row = db.prepare('SELECT * FROM brands WHERE id = ?').get(req.params.id);
@@ -217,7 +232,7 @@ app.get('/api/brands/:id', (req, res) => {
   }
 });
 
-// ---- 4. Уникальные объёмы для бренда ----
+// ---- 4. Объёмы для бренда ----
 app.get('/api/volumes', (req, res) => {
   try {
     const { brandId } = req.query;
@@ -235,10 +250,10 @@ app.get('/api/volumes', (req, res) => {
   }
 });
 
-// ---- 5. Товары с фильтром по бренду, объёму, категории, поиском ----
+// ---- 5. Товары (фильтр, поиск, пагинация, сортировка) ----
 app.get('/api/products', (req, res) => {
   try {
-    const { brandId, volumeId, category, search, page = 1, limit = 12 } = req.query;
+    const { brandId, volumeId, category, search, page = 1, limit = 12, sort = 'newest', ids } = req.query;
     let sql = `
       SELECT p.*, c.name as category_name, b.name as brand_name, v.name as volume_name
       FROM products p
@@ -268,14 +283,28 @@ app.get('/api/products', (req, res) => {
         params.push('%' + word + '%', '%' + word + '%');
       });
     }
+    if (ids) {
+      const idArray = ids.split(',').map(Number).filter(id => !isNaN(id));
+      if (idArray.length) {
+        conditions.push(`p.id IN (${idArray.map(() => '?').join(',')})`);
+        params.push(...idArray);
+      }
+    }
 
     if (conditions.length) sql += ' WHERE ' + conditions.join(' AND ');
 
+    // Для подсчёта общего количества
     const countStmt = db.prepare('SELECT COUNT(*) as total FROM products p' + (conditions.length ? ' WHERE ' + conditions.join(' AND ') : ''));
     const totalRow = countStmt.get(...params);
     const total = totalRow.total;
     const offset = (page - 1) * limit;
-    sql += ' ORDER BY p.id DESC LIMIT ? OFFSET ?';
+
+    if (sort === 'random') {
+      sql += ' ORDER BY RANDOM()';
+    } else {
+      sql += ' ORDER BY p.id DESC';
+    }
+    sql += ' LIMIT ? OFFSET ?';
     const dataStmt = db.prepare(sql);
     const rows = dataStmt.all(...params, limit, offset);
     res.json({ items: rows, total, page: parseInt(page), totalPages: Math.ceil(total / limit) });
@@ -284,7 +313,7 @@ app.get('/api/products', (req, res) => {
   }
 });
 
-// ---- 6. Получить товар по ID (с брендом и объёмом) ----
+// ---- 6. Товар по ID ----
 app.get('/api/products/:id', (req, res) => {
   try {
     const row = db.prepare(`
@@ -428,7 +457,6 @@ app.post('/api/auth/register', async (req, res) => {
     res.status(500).json({ error: 'Ошибка регистрации' });
   }
 });
-
 app.post('/api/auth/login', async (req, res) => {
   try {
     const { login, password } = req.body;
@@ -444,7 +472,6 @@ app.post('/api/auth/login', async (req, res) => {
     res.status(500).json({ error: 'Ошибка входа' });
   }
 });
-
 app.get('/api/auth/me', (req, res) => {
   try {
     if (!isAuthenticated(req)) return res.json({ user: null });
@@ -455,12 +482,10 @@ app.get('/api/auth/me', (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
-
 app.post('/api/auth/logout', (req, res) => {
   req.session.destroy();
   res.json({ success: true });
 });
-
 app.post('/api/auth/recover-login', (req, res) => {
   try {
     const { firstName, lastName } = req.body;
@@ -472,7 +497,6 @@ app.post('/api/auth/recover-login', (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
-
 app.post('/api/auth/reset-password', async (req, res) => {
   try {
     const { firstName, lastName, login, newPassword } = req.body;
@@ -487,30 +511,47 @@ app.post('/api/auth/reset-password', async (req, res) => {
   }
 });
 
-// ---- 14. Корзина ----
-app.get('/api/cart', (req, res) => res.json(req.session.cart || []));
+// ---- 14. Корзина (с поддержкой типа цены) ----
+app.get('/api/cart', (req, res) => {
+  res.json(req.session.cart || []);
+});
+
 app.post('/api/cart', (req, res) => {
   try {
-    const { productId, quantity } = req.body;
+    const { productId, quantity, priceType = 'retail' } = req.body;
     let cart = req.session.cart || [];
     const product = db.prepare('SELECT * FROM products WHERE id = ?').get(productId);
     if (!product) return res.status(404).json({ error: 'Товар не найден' });
-    const existing = cart.find(item => item.productId === productId);
-    if (existing) {
-      existing.quantity = quantity > 0 ? quantity : existing.quantity;
-      if (quantity <= 0) cart = cart.filter(item => item.productId !== productId);
-    } else if (quantity > 0) cart.push({ productId, quantity });
+
+    let price = product.price;
+    if (priceType === 'wholesale' && product.wholesale_price !== null && product.wholesale_price > 0) {
+      price = product.wholesale_price;
+    }
+
+    const existingIndex = cart.findIndex(item => item.productId === productId && item.priceType === priceType);
+    if (existingIndex !== -1) {
+      if (quantity > 0) {
+        cart[existingIndex].quantity = quantity;
+        cart[existingIndex].price = price;
+      } else {
+        cart.splice(existingIndex, 1);
+      }
+    } else if (quantity > 0) {
+      cart.push({ productId, quantity, priceType, price });
+    }
     req.session.cart = cart;
     res.json(cart);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
-app.delete('/api/cart/:id', (req, res) => {
+
+app.delete('/api/cart/:productId', (req, res) => {
   try {
-    const id = parseInt(req.params.id);
+    const productId = parseInt(req.params.productId);
+    const priceType = req.query.priceType || 'retail';
     let cart = req.session.cart || [];
-    cart = cart.filter(item => item.productId !== id);
+    cart = cart.filter(item => !(item.productId === productId && item.priceType === priceType));
     req.session.cart = cart;
     res.json(cart);
   } catch (err) {
@@ -525,22 +566,34 @@ app.post('/api/orders', (req, res) => {
     if (isBlocked(req.session.userId)) return res.status(403).json({ error: 'Ваш аккаунт заблокирован' });
     const cart = req.session.cart || [];
     if (cart.length === 0) return res.status(400).json({ error: 'Корзина пуста' });
-    const ids = cart.map(item => item.productId);
-    const placeholders = ids.map(() => '?').join(',');
-    const products = db.prepare(`SELECT * FROM products WHERE id IN (${placeholders})`).all(...ids);
-    const productMap = {};
-    products.forEach(p => productMap[p.id] = p);
+
     let total = 0;
     const orderItems = cart.map(item => {
-      const product = productMap[item.productId];
-      const price = product ? product.price : 0;
+      const product = db.prepare('SELECT * FROM products WHERE id = ?').get(item.productId);
+      if (!product) return null;
+      const price = item.price || product.price;
       total += price * item.quantity;
-      return { productId: item.productId, name: product ? product.name : 'Неизвестно', price, quantity: item.quantity };
-    });
+      return {
+        productId: item.productId,
+        name: product.name,
+        price: price,
+        quantity: item.quantity,
+        priceType: item.priceType || 'retail'
+      };
+    }).filter(item => item !== null);
+
     const info = db.prepare('INSERT INTO orders (user_id, items, total, status) VALUES (?, ?, ?, ?)')
       .run(req.session.userId, JSON.stringify(orderItems), total, 'pending');
     req.session.cart = [];
-    res.json({ orderId: info.lastInsertRowid, total, message: 'Заказ создан' });
+
+    // ---- Уведомление админу ----
+    const orderId = info.lastInsertRowid;
+    const user = db.prepare('SELECT first_name, last_name FROM users WHERE id = ?').get(req.session.userId);
+    const message = `🆕 Новый заказ №${orderId} от ${user.first_name} ${user.last_name} на сумму ${total} ₽`;
+    db.prepare('INSERT INTO notifications (message) VALUES (?)').run(message);
+    io.to('admin').emit('new-order', { orderId, total, user: `${user.first_name} ${user.last_name}`, message });
+
+    res.json({ orderId, total, message: 'Заказ создан' });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -602,7 +655,7 @@ app.get('/api/admin/status', (req, res) => {
   res.json({ isAdmin: !!req.session.isAdmin });
 });
 
-// ---- Админ: товары ----
+// ---- Админ: товары (с wholesale_price) ----
 app.get('/api/admin/products', (req, res) => {
   try {
     if (!isAdmin(req)) return res.status(403).json({ error: 'Доступ запрещён' });
@@ -622,7 +675,7 @@ app.get('/api/admin/products', (req, res) => {
 app.post('/api/admin/products', upload.single('image'), (req, res) => {
   try {
     if (!isAdmin(req)) return res.status(403).json({ error: 'Доступ запрещён' });
-    const { name, price, category_id, brand_id, volume_id, imageUrl, description } = req.body;
+    const { name, price, category_id, brand_id, volume_id, imageUrl, description, wholesale_price } = req.body;
     let image = '';
     if (req.file) image = '/uploads/' + req.file.filename;
     else if (imageUrl && imageUrl.trim() !== '') image = imageUrl.trim();
@@ -630,9 +683,18 @@ app.post('/api/admin/products', upload.single('image'), (req, res) => {
       return res.status(400).json({ error: 'Заполните все поля (название, цена, категория, бренд, объём)' });
     }
     const info = db.prepare(`
-      INSERT INTO products (name, price, category_id, brand_id, volume_id, image, description)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
-    `).run(name, parseFloat(price), category_id, brand_id, volume_id, image, description || '');
+      INSERT INTO products (name, price, category_id, brand_id, volume_id, image, description, wholesale_price)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      name,
+      parseFloat(price),
+      category_id,
+      brand_id,
+      volume_id,
+      image,
+      description || '',
+      wholesale_price ? parseFloat(wholesale_price) : null
+    );
     db.prepare('INSERT INTO notifications (message) VALUES (?)').run('Добавлен новый товар: ' + name);
     res.json({ id: info.lastInsertRowid });
   } catch (err) {
@@ -644,21 +706,33 @@ app.put('/api/admin/products/:id', upload.single('image'), (req, res) => {
   try {
     if (!isAdmin(req)) return res.status(403).json({ error: 'Доступ запрещён' });
     const id = req.params.id;
-    const { name, price, category_id, brand_id, volume_id, imageUrl, description } = req.body;
+    const { name, price, category_id, brand_id, volume_id, imageUrl, description, wholesale_price } = req.body;
     let image = '';
     if (req.file) image = '/uploads/' + req.file.filename;
     else if (imageUrl && imageUrl.trim() !== '') image = imageUrl.trim();
     else image = '';
     const info = db.prepare(`
-      UPDATE products SET name = ?, price = ?, category_id = ?, brand_id = ?, volume_id = ?, image = ?, description = ?
+      UPDATE products
+      SET name = ?, price = ?, category_id = ?, brand_id = ?, volume_id = ?, image = ?, description = ?, wholesale_price = ?
       WHERE id = ?
-    `).run(name, parseFloat(price), category_id, brand_id, volume_id, image, description || '', id);
+    `).run(
+      name,
+      parseFloat(price),
+      category_id,
+      brand_id,
+      volume_id,
+      image,
+      description || '',
+      wholesale_price ? parseFloat(wholesale_price) : null,
+      id
+    );
     if (info.changes === 0) return res.status(404).json({ error: 'Товар не найден' });
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
+
 app.delete('/api/admin/products/:id', (req, res) => {
   try {
     if (!isAdmin(req)) return res.status(403).json({ error: 'Доступ запрещён' });
@@ -670,7 +744,7 @@ app.delete('/api/admin/products/:id', (req, res) => {
   }
 });
 
-// ---- Админ: категории (с фото) ----
+// ---- Админ: категории ----
 app.get('/api/admin/categories', (req, res) => {
   try {
     if (!isAdmin(req)) return res.status(403).json({ error: 'Доступ запрещён' });
@@ -903,7 +977,7 @@ app.delete('/api/admin/news/:id', (req, res) => {
   }
 });
 
-// ---- Админ: заказы ----
+// ---- Админ: заказы (с уведомлением пользователя) ----
 app.get('/api/admin/orders', (req, res) => {
   try {
     if (!isAdmin(req)) return res.status(403).json({ error: 'Доступ запрещён' });
@@ -923,8 +997,25 @@ app.put('/api/admin/orders/:id', (req, res) => {
     if (!isAdmin(req)) return res.status(403).json({ error: 'Доступ запрещён' });
     const { status } = req.body;
     if (!status) return res.status(400).json({ error: 'Укажите статус' });
+    
+    const order = db.prepare('SELECT user_id FROM orders WHERE id = ?').get(req.params.id);
+    if (!order) return res.status(404).json({ error: 'Заказ не найден' });
+
     const info = db.prepare('UPDATE orders SET status = ? WHERE id = ?').run(status, req.params.id);
     if (info.changes === 0) return res.status(404).json({ error: 'Заказ не найден' });
+
+    // Уведомление пользователю
+    const statusMap = {
+      pending: 'ожидает подтверждения',
+      paid: 'оплачен',
+      shipped: 'отправлен',
+      delivered: 'доставлен'
+    };
+    const statusText = statusMap[status] || status;
+    const message = `📦 Статус заказа №${req.params.id} изменён на «${statusText}»`;
+    db.prepare('INSERT INTO notifications (message) VALUES (?)').run(message);
+    io.to(`user_${order.user_id}`).emit('order-status-changed', { orderId: req.params.id, status, statusText, message });
+
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -979,7 +1070,26 @@ app.get('/sitemap.xml', (req, res) => {
   }
 });
 
+// ---- WebSocket обработчики ----
+io.on('connection', (socket) => {
+  console.log('🔌 Новое подключение:', socket.id);
+  
+  socket.on('register-user', (data) => {
+    if (data && data.userId) {
+      // Добавляем сокет в комнату пользователя
+      socket.join(`user_${data.userId}`);
+      console.log(`✅ Пользователь ${data.userId} подключён к комнате user_${data.userId}`);
+    }
+    // Если админ, добавляем в комнату admin (можно по роли, но для простоты – все)
+    socket.join('admin');
+  });
+
+  socket.on('disconnect', () => {
+    console.log('🔌 Отключение:', socket.id);
+  });
+});
+
 // ---- ЗАПУСК ----
-app.listen(PORT, () => {
+server.listen(PORT, () => {
   console.log(`✅ Сервер запущен на http://localhost:${PORT}`);
 });
