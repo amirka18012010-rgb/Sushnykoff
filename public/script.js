@@ -6,6 +6,61 @@ let currentBrandId = null, currentVolumeId = null, currentSort = 'newest';
 let socket = null;
 
 // ============================================================
+// КЕШИРОВАНИЕ В localStorage
+// ============================================================
+const CACHE_TTL = 5 * 60 * 1000; // 5 минут
+
+function getCached(key) {
+  try {
+    const item = localStorage.getItem(key);
+    if (!item) return null;
+    const data = JSON.parse(item);
+    if (Date.now() - data.timestamp > CACHE_TTL) {
+      localStorage.removeItem(key);
+      return null;
+    }
+    return data.value;
+  } catch {
+    return null;
+  }
+}
+
+function setCache(key, value) {
+  try {
+    localStorage.setItem(key, JSON.stringify({
+      timestamp: Date.now(),
+      value: value
+    }));
+  } catch (err) {
+    console.warn('Ошибка сохранения в кеш:', err);
+  }
+}
+
+function clearCache(key) {
+  if (key) {
+    localStorage.removeItem(key);
+  } else {
+    // Очищаем все кеши товаров и категорий
+    const keys = Object.keys(localStorage);
+    keys.forEach(k => {
+      if (k.startsWith('products_') || k === 'categories' || k === 'brands' || k === 'volumes') {
+        localStorage.removeItem(k);
+      }
+    });
+  }
+}
+
+// Генерируем ключ для кеша на основе URL параметров
+function getCacheKey(url) {
+  const urlObj = new URL(url);
+  const params = new URLSearchParams(urlObj.search);
+  params.delete('page');
+  params.delete('limit');
+  const sortedParams = new URLSearchParams([...params.entries()].sort());
+  return `products_${urlObj.pathname}?${sortedParams.toString()}`;
+}
+
+// ============================================================
 // ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ
 // ============================================================
 function debounce(func, wait) {
@@ -81,38 +136,54 @@ if (burgerBtn && burgerMenu) {
 }
 
 // ============================================================
-// КАТЕГОРИИ
+// КАТЕГОРИИ (с кешированием и принудительной очисткой)
 // ============================================================
-function loadCategories() {
+function loadCategories(force = false) {
   if (!categoriesGrid) return;
+  
+  if (force) {
+    clearCache('categories');
+  }
+  
+  const cached = getCached('categories');
+  if (cached) {
+    renderCategories(cached);
+    return;
+  }
+  
   fetch('/api/categories')
     .then(res => res.json())
     .then(cats => {
-      if (!cats.length) {
-        categoriesGrid.innerHTML = '<p>Категории не загружены</p>';
-        return;
-      }
-      categoriesGrid.innerHTML = cats.map(c => {
-        const content = c.image
-          ? `<img class="category-img" src="${c.image}" alt="${c.name}">`
-          : `<div class="category-icon">${c.icon || '📂'}</div>`;
-        return `
-          <div class="category-card" data-id="${c.id}">
-            ${content}
-            <div class="category-info">
-              <div class="name">${c.name}</div>
-            </div>
-          </div>
-        `;
-      }).join('');
-      document.querySelectorAll('.category-card').forEach(el => {
-        el.addEventListener('click', function() {
-          const id = this.dataset.id;
-          window.location.href = `/brands.html?category=${id}`;
-        });
-      });
+      setCache('categories', cats);
+      renderCategories(cats);
     })
     .catch(err => console.error('Ошибка загрузки категорий:', err));
+}
+
+function renderCategories(cats) {
+  if (!cats || !cats.length) {
+    categoriesGrid.innerHTML = '<p>Категории не загружены</p>';
+    return;
+  }
+  categoriesGrid.innerHTML = cats.map(c => {
+    const content = c.image
+      ? `<img class="category-img" src="${c.image}" alt="${c.name}" loading="lazy">`
+      : `<div class="category-icon">${c.icon || '📂'}</div>`;
+    return `
+      <div class="category-card" data-id="${c.id}">
+        ${content}
+        <div class="category-info">
+          <div class="name">${c.name}</div>
+        </div>
+      </div>
+    `;
+  }).join('');
+  document.querySelectorAll('.category-card').forEach(el => {
+    el.addEventListener('click', function() {
+      const id = this.dataset.id;
+      window.location.href = `/brands.html?category=${id}`;
+    });
+  });
 }
 
 function handleHeaderSearch() {
@@ -178,6 +249,7 @@ if (window.location.pathname.includes('brands.html')) {
     if (sortSelect) {
       sortSelect.addEventListener('change', function() {
         currentSort = this.value;
+        clearCache(null);
         if (categoryId) {
           loadBrandsCategoryProducts(categoryId);
         } else {
@@ -191,6 +263,7 @@ if (window.location.pathname.includes('brands.html')) {
     if (resetBtn) {
       resetBtn.addEventListener('click', () => {
         if (searchInput) searchInput.value = '';
+        clearCache(null);
         if (categoryId) {
           loadBrandsCategoryProducts(categoryId);
         } else {
@@ -225,7 +298,7 @@ function loadBrands(categoryId) {
       grid.style.display = 'grid';
       grid.innerHTML = brands.map(b => `
         <div class="brand-card" data-id="${b.id}">
-          ${b.image ? `<img src="${b.image}" alt="${b.name}">` : '<div class="placeholder">📦</div>'}
+          ${b.image ? `<img src="${b.image}" alt="${b.name}" loading="lazy">` : '<div class="placeholder">📦</div>'}
           <div class="brand-info">
             <div class="name">${b.name}</div>
           </div>
@@ -248,12 +321,25 @@ function loadBrandsCategoryProducts(categoryId) {
   url.searchParams.append('page', currentPage);
   url.searchParams.append('limit', 12);
   url.searchParams.append('sort', currentSort);
+  
+  const cacheKey = getCacheKey(url.toString());
+  const cached = getCached(cacheKey);
+  if (cached) {
+    products = cached.items;
+    totalPages = cached.totalPages;
+    currentPage = cached.page;
+    renderProducts();
+    renderPagination();
+    return;
+  }
+  
   fetch(url)
     .then(res => res.json())
     .then(data => {
       products = data.items || [];
       totalPages = data.totalPages || 1;
       currentPage = data.page || 1;
+      setCache(cacheKey, data);
       renderProducts();
       renderPagination();
     })
@@ -266,12 +352,25 @@ function loadSearchProducts(search) {
   url.searchParams.append('page', currentPage);
   url.searchParams.append('limit', 12);
   url.searchParams.append('sort', currentSort);
+  
+  const cacheKey = getCacheKey(url.toString());
+  const cached = getCached(cacheKey);
+  if (cached) {
+    products = cached.items;
+    totalPages = cached.totalPages;
+    currentPage = cached.page;
+    renderProducts();
+    renderPagination();
+    return;
+  }
+  
   fetch(url)
     .then(res => res.json())
     .then(data => {
       products = data.items || [];
       totalPages = data.totalPages || 1;
       currentPage = data.page || 1;
+      setCache(cacheKey, data);
       renderProducts();
       renderPagination();
     })
@@ -296,12 +395,14 @@ if (window.location.pathname.includes('brand.html')) {
       if (searchInput) {
         searchInput.addEventListener('input', debounce(() => {
           const search = searchInput.value.trim();
+          clearCache(null);
           loadProductsForBrand(brandId, currentVolumeId, search);
         }, 300));
       }
       if (sortSelect) {
         sortSelect.addEventListener('change', function() {
           currentSort = this.value;
+          clearCache(null);
           const search = searchInput ? searchInput.value.trim() : '';
           loadProductsForBrand(brandId, currentVolumeId, search);
         });
@@ -310,6 +411,7 @@ if (window.location.pathname.includes('brand.html')) {
       if (resetBtn) {
         resetBtn.addEventListener('click', () => {
           if (searchInput) searchInput.value = '';
+          clearCache(null);
           loadProductsForBrand(brandId, currentVolumeId);
         });
       }
@@ -337,12 +439,26 @@ function loadProductsForBrand(brandId, volumeId = null, search = '') {
   url.searchParams.append('page', currentPage);
   url.searchParams.append('limit', 12);
   url.searchParams.append('sort', currentSort);
+  
+  const cacheKey = getCacheKey(url.toString());
+  const cached = getCached(cacheKey);
+  if (cached) {
+    products = cached.items;
+    totalPages = cached.totalPages;
+    currentPage = cached.page;
+    renderProducts();
+    renderPagination();
+    loadVolumesFilter(brandId, volumeId);
+    return;
+  }
+  
   fetch(url)
     .then(res => res.json())
     .then(data => {
       products = data.items || [];
       totalPages = data.totalPages || 1;
       currentPage = data.page || 1;
+      setCache(cacheKey, data);
       renderProducts();
       renderPagination();
       loadVolumesFilter(brandId, volumeId);
@@ -369,6 +485,7 @@ function loadVolumesFilter(brandId, selectedVolumeId = null) {
           this.classList.add('active');
           const vid = this.dataset.id === 'all' ? null : parseInt(this.dataset.id);
           currentVolumeId = vid;
+          clearCache(null);
           const searchInput = document.getElementById('brandSearchInput');
           const search = searchInput ? searchInput.value.trim() : '';
           loadProductsForBrand(currentBrandId, vid, search);
@@ -482,10 +599,22 @@ function loadFavoritesPage() {
         return;
       }
       const ids = favIds.join(',');
-      fetch(`/api/products?ids=${ids}&limit=50`)
+      const url = new URL('/api/products', window.location.origin);
+      url.searchParams.append('ids', ids);
+      url.searchParams.append('limit', 50);
+      
+      const cacheKey = getCacheKey(url.toString());
+      const cached = getCached(cacheKey);
+      if (cached) {
+        renderFavoritesProducts(cached.items || cached);
+        return;
+      }
+      
+      fetch(url)
         .then(res => res.json())
         .then(data => {
           const favProducts = data.items || data;
+          setCache(cacheKey, favProducts);
           renderFavoritesProducts(favProducts);
         });
     })
@@ -537,7 +666,7 @@ function renderFavoritesProducts(favProducts) {
     btn.addEventListener('click', (e) => {
       e.stopPropagation();
       toggleFavorite(parseInt(btn.dataset.id));
-      loadFavoritesPage(); // перезагрузка после удаления
+      loadFavoritesPage();
     });
   });
   grid.querySelectorAll('.product-card').forEach(card => {
@@ -581,10 +710,10 @@ function toggleFavorite(productId) {
 }
 
 // ============================================================
-// КОРЗИНА (с ручным вводом количества)
+// КОРЗИНА (с поддержкой БД и синхронизацией)
 // ============================================================
 function loadCart() {
-  fetch('/api/cart')
+  return fetch('/api/cart')
     .then(res => res.json())
     .then(data => {
       cart = data;
@@ -617,6 +746,17 @@ function removeFromCart(productId, priceType = 'retail') {
       updateCartUI();
     })
     .catch(err => console.error('Ошибка удаления из корзины:', err));
+}
+
+function syncCart() {
+  if (!currentUser) return;
+  return fetch('/api/cart/sync', { method: 'POST' })
+    .then(res => res.json())
+    .then(updatedCart => {
+      cart = updatedCart;
+      updateCartUI();
+    })
+    .catch(err => console.error('Ошибка синхронизации корзины:', err));
 }
 
 function updateCartUI() {
@@ -665,7 +805,6 @@ function updateCartUI() {
       cartItems.innerHTML = itemsHtml;
       cartTotal.textContent = total + ' ₽';
 
-      // Обработчики +/-
       document.querySelectorAll('.cart-item .item-qty button[data-action]').forEach(btn => {
         btn.addEventListener('click', (e) => {
           const id = parseInt(e.target.dataset.id);
@@ -685,7 +824,6 @@ function updateCartUI() {
         });
       });
 
-      // Ручной ввод
       document.querySelectorAll('.qty-input').forEach(input => {
         input.addEventListener('change', function() {
           const id = parseInt(this.dataset.id);
@@ -709,7 +847,6 @@ function updateCartUI() {
         });
       });
 
-      // Удаление
       document.querySelectorAll('.remove-item').forEach(btn => {
         btn.addEventListener('click', function() {
           const id = parseInt(this.dataset.id);
@@ -742,6 +879,7 @@ if (checkoutBtn) {
         alert(data.error);
       } else {
         alert(`Заказ №${data.orderId} создан! Сумма: ${data.total} ₽`);
+        clearCache(null);
         loadCart();
         closeCart();
       }
@@ -770,20 +908,30 @@ if (cartOverlay) {
 }
 
 // ============================================================
-// НОВОСТИ
+// НОВОСТИ (с кешированием)
 // ============================================================
 function checkNews() {
+  const cached = getCached('news');
+  if (cached) {
+    renderNews(cached);
+    return;
+  }
   fetch('/api/news/latest')
     .then(res => res.json())
     .then(news => {
-      if (news.length > 0 && document.getElementById('newsContent')) {
-        document.getElementById('newsContent').innerHTML = news.map(n =>
-          `<div style="margin-bottom:15px;"><h3>${n.title}</h3><p>${n.content}</p><small>${new Date(n.created_at).toLocaleDateString()}</small></div>`
-        ).join('');
-        if (newsOverlay) newsOverlay.classList.add('open');
-      }
+      setCache('news', news);
+      renderNews(news);
     })
     .catch(err => console.error('Ошибка загрузки новостей:', err));
+}
+
+function renderNews(news) {
+  if (news.length > 0 && document.getElementById('newsContent')) {
+    document.getElementById('newsContent').innerHTML = news.map(n =>
+      `<div style="margin-bottom:15px;"><h3>${n.title}</h3><p>${n.content}</p><small>${new Date(n.created_at).toLocaleDateString()}</small></div>`
+    ).join('');
+    if (newsOverlay) newsOverlay.classList.add('open');
+  }
 }
 
 function closeNews() {
@@ -798,10 +946,10 @@ if (newsOverlay) {
 }
 
 // ============================================================
-// АУТЕНТИФИКАЦИЯ
+// АУТЕНТИФИКАЦИЯ (с параллельной загрузкой)
 // ============================================================
 function loadUser() {
-  fetch('/api/auth/me')
+  return fetch('/api/auth/me')
     .then(res => res.json())
     .then(data => {
       if (data.user) {
@@ -815,11 +963,11 @@ function loadUser() {
         checkAdminStatus();
         loadFavorites();
         checkNews();
-        // Инициализация сокета
         initSocket();
         if (socket) {
           socket.emit('register-user', { userId: currentUser.id });
         }
+        return syncCart();
       } else {
         currentUser = null;
         const authBtns = document.getElementById('authButtons');
@@ -832,6 +980,7 @@ function loadUser() {
           socket.disconnect();
           socket = null;
         }
+        return loadCart();
       }
     })
     .catch(err => console.error('Ошибка загрузки пользователя:', err));
@@ -857,8 +1006,220 @@ function checkAdminStatus() {
     });
 }
 
-// ---- Вход, регистрация, выход (без изменений) ----
-// ... (код login, register, logout, recover остаётся как был, я не буду дублировать для краткости, но он есть в полной версии)
+// ---- Вход (добавлен syncCart) ----
+const loginBtn = document.getElementById('loginBtn');
+const closeLoginBtn = document.getElementById('closeLoginBtn');
+const loginForm = document.getElementById('loginForm');
+const loginInput = document.getElementById('loginInput');
+const passwordInput = document.getElementById('passwordInput');
+const loginError = document.getElementById('loginError');
+const loginOverlayElem = document.getElementById('loginOverlay');
+
+if (loginBtn) {
+  loginBtn.addEventListener('click', () => {
+    if (loginOverlayElem) loginOverlayElem.classList.add('open');
+  });
+}
+if (closeLoginBtn) {
+  closeLoginBtn.addEventListener('click', () => {
+    if (loginOverlayElem) loginOverlayElem.classList.remove('open');
+  });
+}
+if (loginForm) {
+  loginForm.addEventListener('submit', (e) => {
+    e.preventDefault();
+    const login = loginInput.value;
+    const password = passwordInput.value;
+    fetch('/api/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ login, password })
+    })
+      .then(res => res.json())
+      .then(data => {
+        if (data.success) {
+          if (loginOverlayElem) loginOverlayElem.classList.remove('open');
+          loginForm.reset();
+          clearCache(null);
+          loadUser();
+        } else {
+          if (loginError) loginError.textContent = data.error || 'Ошибка входа';
+        }
+      })
+      .catch(() => {
+        if (loginError) loginError.textContent = 'Ошибка соединения';
+      });
+  });
+}
+
+// ---- Регистрация ----
+const registerBtn = document.getElementById('registerBtn');
+const closeRegisterBtn = document.getElementById('closeRegisterBtn');
+const registerForm = document.getElementById('registerForm');
+const registerOverlayElem = document.getElementById('registerOverlay');
+const regFirstName = document.getElementById('regFirstName');
+const regLastName = document.getElementById('regLastName');
+const regLogin = document.getElementById('regLogin');
+const regPassword = document.getElementById('regPassword');
+const registerError = document.getElementById('registerError');
+
+if (registerBtn) {
+  registerBtn.addEventListener('click', () => {
+    if (registerOverlayElem) registerOverlayElem.classList.add('open');
+  });
+}
+if (closeRegisterBtn) {
+  closeRegisterBtn.addEventListener('click', () => {
+    if (registerOverlayElem) registerOverlayElem.classList.remove('open');
+  });
+}
+if (registerForm) {
+  registerForm.addEventListener('submit', (e) => {
+    e.preventDefault();
+    const firstName = regFirstName.value;
+    const lastName = regLastName.value;
+    const login = regLogin.value;
+    const password = regPassword.value;
+    fetch('/api/auth/register', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ firstName, lastName, login, password })
+    })
+      .then(res => res.json())
+      .then(data => {
+        if (data.success) {
+          if (registerOverlayElem) registerOverlayElem.classList.remove('open');
+          registerForm.reset();
+          loadUser();
+        } else {
+          if (registerError) registerError.textContent = data.error || 'Ошибка регистрации';
+        }
+      })
+      .catch(() => {
+        if (registerError) registerError.textContent = 'Ошибка соединения';
+      });
+  });
+}
+
+// ---- Выход ----
+const logoutBtn = document.getElementById('logoutBtn');
+if (logoutBtn) {
+  logoutBtn.addEventListener('click', () => {
+    fetch('/api/auth/logout', { method: 'POST' })
+      .then(() => {
+        clearCache(null);
+        loadUser();
+      });
+  });
+}
+
+// ---- Восстановление (без изменений) ----
+const forgotLoginBtn = document.getElementById('forgotLoginBtn');
+const forgotPasswordBtn = document.getElementById('forgotPasswordBtn');
+const recoverOverlay = document.getElementById('recoverOverlay');
+const closeRecoverBtn = document.getElementById('closeRecoverBtn');
+const recoverFirstName = document.getElementById('recoverFirstName');
+const recoverLastName = document.getElementById('recoverLastName');
+const recoverSearchBtn = document.getElementById('recoverSearchBtn');
+const recoverStep1 = document.getElementById('recoverStep1');
+const recoverStep2 = document.getElementById('recoverStep2');
+const recoveredLogin = document.getElementById('recoveredLogin');
+const recoverNewPassword = document.getElementById('recoverNewPassword');
+const recoverResetBtn = document.getElementById('recoverResetBtn');
+const recoverMessage = document.getElementById('recoverMessage');
+const recoverError = document.getElementById('recoverError');
+
+if (forgotLoginBtn) {
+  forgotLoginBtn.addEventListener('click', () => {
+    if (loginOverlayElem) loginOverlayElem.classList.remove('open');
+    if (recoverOverlay) recoverOverlay.classList.add('open');
+    if (recoverStep1) recoverStep1.style.display = 'block';
+    if (recoverStep2) recoverStep2.style.display = 'none';
+    if (recoverMessage) recoverMessage.textContent = '';
+    if (recoverError) recoverError.textContent = '';
+  });
+}
+if (forgotPasswordBtn) {
+  forgotPasswordBtn.addEventListener('click', () => {
+    if (loginOverlayElem) loginOverlayElem.classList.remove('open');
+    if (recoverOverlay) recoverOverlay.classList.add('open');
+    if (recoverStep1) recoverStep1.style.display = 'block';
+    if (recoverStep2) recoverStep2.style.display = 'none';
+    if (recoverMessage) recoverMessage.textContent = '';
+    if (recoverError) recoverError.textContent = '';
+  });
+}
+if (closeRecoverBtn) {
+  closeRecoverBtn.addEventListener('click', () => {
+    if (recoverOverlay) recoverOverlay.classList.remove('open');
+  });
+}
+if (recoverSearchBtn) {
+  recoverSearchBtn.addEventListener('click', () => {
+    const firstName = recoverFirstName.value;
+    const lastName = recoverLastName.value;
+    if (!firstName || !lastName) {
+      if (recoverError) recoverError.textContent = 'Введите имя и фамилию';
+      return;
+    }
+    fetch('/api/auth/recover-login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ firstName, lastName })
+    })
+      .then(res => res.json())
+      .then(data => {
+        if (data.login) {
+          if (recoveredLogin) recoveredLogin.textContent = data.login;
+          if (recoverStep1) recoverStep1.style.display = 'none';
+          if (recoverStep2) recoverStep2.style.display = 'block';
+          if (recoverError) recoverError.textContent = '';
+          if (recoverMessage) recoverMessage.textContent = '';
+        } else {
+          if (recoverError) recoverError.textContent = data.error || 'Пользователь не найден';
+        }
+      })
+      .catch(() => {
+        if (recoverError) recoverError.textContent = 'Ошибка соединения';
+      });
+  });
+}
+if (recoverResetBtn) {
+  recoverResetBtn.addEventListener('click', () => {
+    const firstName = recoverFirstName.value;
+    const lastName = recoverLastName.value;
+    const login = recoveredLogin ? recoveredLogin.textContent : '';
+    const newPassword = recoverNewPassword.value;
+    if (!newPassword) {
+      if (recoverError) recoverError.textContent = 'Введите новый пароль';
+      return;
+    }
+    fetch('/api/auth/reset-password', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ firstName, lastName, login, newPassword })
+    })
+      .then(res => res.json())
+      .then(data => {
+        if (data.success) {
+          if (recoverMessage) recoverMessage.textContent = 'Пароль успешно изменён!';
+          if (recoverError) recoverError.textContent = '';
+          setTimeout(() => {
+            if (recoverOverlay) recoverOverlay.classList.remove('open');
+            if (recoverStep2) recoverStep2.style.display = 'none';
+            if (recoverStep1) recoverStep1.style.display = 'block';
+            if (recoverNewPassword) recoverNewPassword.value = '';
+            if (recoverMessage) recoverMessage.textContent = '';
+          }, 2000);
+        } else {
+          if (recoverError) recoverError.textContent = data.error || 'Ошибка сброса пароля';
+        }
+      })
+      .catch(() => {
+        if (recoverError) recoverError.textContent = 'Ошибка соединения';
+      });
+  });
+}
 
 // ---- Поиск в хедере ----
 const headerSearchInput = document.getElementById('headerSearchInput');
@@ -977,23 +1338,34 @@ function startNotifPolling() {
 }
 startNotifPolling();
 
-// ---- Фон ----
+// ---- Фон (с кешированием) ----
 function applyBackground() {
-  fetch('/api/background')
+  const cached = getCached('background');
+  if (cached) {
+    applyBackgroundStyle(cached);
+    return Promise.resolve();
+  }
+  return fetch('/api/background')
     .then(res => res.json())
     .then(data => {
-      if (data.background) {
-        document.body.style.backgroundImage = `url(${data.background})`;
-        document.body.style.backgroundSize = 'cover';
-        document.body.style.backgroundAttachment = 'fixed';
-        document.body.style.backgroundPosition = 'center';
-        document.body.classList.add('has-bg');
-      } else {
-        document.body.style.backgroundImage = '';
-        document.body.classList.remove('has-bg');
-      }
+      const bg = data.background || '';
+      setCache('background', bg);
+      applyBackgroundStyle(bg);
     })
     .catch(err => console.error('Ошибка загрузки фона:', err));
+}
+
+function applyBackgroundStyle(bg) {
+  if (bg) {
+    document.body.style.backgroundImage = `url(${bg})`;
+    document.body.style.backgroundSize = 'cover';
+    document.body.style.backgroundAttachment = 'fixed';
+    document.body.style.backgroundPosition = 'center';
+    document.body.classList.add('has-bg');
+  } else {
+    document.body.style.backgroundImage = '';
+    document.body.classList.remove('has-bg');
+  }
 }
 
 // ---- Переключение на регистрацию ----
@@ -1030,17 +1402,23 @@ function initSocket() {
 }
 
 // ============================================================
-// ИНИЦИАЛИЗАЦИЯ
+// ИНИЦИАЛИЗАЦИЯ (с параллельными запросами)
 // ============================================================
-function init() {
+async function init() {
+  console.log('🚀 Загрузка сайта...');
+  
   if (window.location.pathname === '/' || window.location.pathname === '/index.html') {
     loadCategories();
   }
-  loadCart();
-  loadUser();
-  applyBackground();
-  setTimeout(checkAdminStatus, 2000);
-  console.log('✅ Скрипт загружен.');
+  
+  await Promise.all([
+    loadUser(),
+    loadCart(),
+    applyBackground(),
+    checkAdminStatus()
+  ]);
+  
+  console.log('✅ Все данные загружены');
 }
 
 init();

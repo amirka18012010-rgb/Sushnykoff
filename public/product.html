@@ -1,4 +1,4 @@
-\<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="ru">
 <head>
   <meta charset="UTF-8">
@@ -10,135 +10,31 @@
   <link rel="stylesheet" href="style.css">
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🧃</text></svg>">
   <style>
-    .product-container {
-      max-width: 800px;
-      margin: 40px auto;
-      padding: 20px;
-      background: white;
-      border-radius: 24px;
-      box-shadow: 0 8px 32px rgba(0,0,0,0.05);
-    }
-    .product-container img {
-      max-width: 300px;
-      height: auto;
-      display: block;
-      margin: 0 auto 20px;
-      border-radius: 12px;
-    }
-    .product-container .name {
-      font-size: 28px;
-      font-weight: 700;
-      color: #1a1a2e;
-    }
-    .product-container .price-block {
-      font-size: 24px;
-      font-weight: 700;
-      margin: 10px 0;
-    }
-    .product-container .price {
-      color: #27ae60;
-    }
-    .product-container .price-separator {
-      color: #bdc3c7;
-      margin: 0 4px;
-    }
-    .product-container .wholesale-price {
-      color: #e67e22;
-    }
-    .product-container .rating {
-      font-size: 18px;
-      margin-bottom: 20px;
-    }
-    .product-container .description {
-      margin: 15px 0;
-      color: #2c3e50;
-    }
-    .product-container .price-selector {
-      display: flex;
-      gap: 12px;
-      margin: 15px 0;
-      flex-wrap: wrap;
-    }
-    .product-container .price-selector button {
-      padding: 10px 24px;
-      border: 2px solid #27ae60;
-      border-radius: 40px;
-      background: transparent;
-      font-weight: 600;
-      cursor: pointer;
-      transition: all 0.2s;
-      font-size: 16px;
-      color: #27ae60;
-    }
-    .product-container .price-selector button.active {
-      background: #27ae60;
-      color: white;
-    }
-    .product-container .price-selector button:hover:not(.active) {
-      background: rgba(39,174,96,0.1);
-    }
-    .add-btn {
-      background: #27ae60;
-      color: white;
-      border: none;
-      padding: 12px 30px;
-      border-radius: 50px;
-      font-size: 16px;
-      font-weight: 600;
-      cursor: pointer;
-      margin-top: 10px;
-    }
-    .add-btn:hover {
-      background: #1e8449;
-    }
-    .review-form {
-      margin: 30px 0;
-      padding: 20px;
-      background: #f8f9fa;
-      border-radius: 16px;
-    }
-    .review-form input,
-    .review-form textarea,
-    .review-form select {
-      width: 100%;
-      padding: 10px;
-      margin: 8px 0;
-      border: 2px solid #ecf0f1;
-      border-radius: 12px;
-      font-size: 15px;
-    }
-    .review-form button {
-      background: #27ae60;
-      color: white;
-      border: none;
-      padding: 12px 25px;
-      border-radius: 50px;
-      font-weight: 600;
-      cursor: pointer;
-    }
-    .review-item {
-      border-bottom: 1px solid #ecf0f1;
-      padding: 15px 0;
-    }
-    .review-item .user {
-      font-weight: 600;
-    }
-    .review-item .rating {
-      color: #f1c40f;
-    }
-    .review-item .date {
-      color: #7f8c8d;
-      font-size: 14px;
-    }
-    #similarProductsGrid {
-      grid-template-columns: repeat(4, 1fr);
-    }
-    @media (max-width: 992px) {
-      #similarProductsGrid { grid-template-columns: repeat(2, 1fr); }
-    }
-    @media (max-width: 600px) {
-      #similarProductsGrid { grid-template-columns: 1fr; }
-    }
+    .product-container { max-width:800px; margin:40px auto; padding:20px; background:white; border-radius:24px; box-shadow:0 8px 32px rgba(0,0,0,0.05); }
+    .product-container img { max-width:300px; height:auto; display:block; margin:0 auto 20px; border-radius:12px; }
+    .product-container .name { font-size:28px; font-weight:700; color:#1a1a2e; }
+    .product-container .price-block { font-size:24px; font-weight:700; margin:10px 0; }
+    .product-container .price { color:#27ae60; }
+    .product-container .price-separator { color:#bdc3c7; margin:0 4px; }
+    .product-container .wholesale-price { color:#e67e22; }
+    .product-container .rating { font-size:18px; margin-bottom:20px; }
+    .product-container .description { margin:15px 0; color:#2c3e50; }
+    .product-container .price-selector { display:flex; gap:12px; margin:15px 0; flex-wrap:wrap; }
+    .product-container .price-selector button { padding:10px 24px; border:2px solid #27ae60; border-radius:40px; background:transparent; font-weight:600; cursor:pointer; transition:all 0.2s; font-size:16px; color:#27ae60; }
+    .product-container .price-selector button.active { background:#27ae60; color:white; }
+    .product-container .price-selector button:hover:not(.active) { background:rgba(39,174,96,0.1); }
+    .add-btn { background:#27ae60; color:white; border:none; padding:12px 30px; border-radius:50px; font-size:16px; font-weight:600; cursor:pointer; margin-top:10px; }
+    .add-btn:hover { background:#1e8449; }
+    .review-form { margin:30px 0; padding:20px; background:#f8f9fa; border-radius:16px; }
+    .review-form input,.review-form textarea,.review-form select { width:100%; padding:10px; margin:8px 0; border:2px solid #ecf0f1; border-radius:12px; font-size:15px; }
+    .review-form button { background:#27ae60; color:white; border:none; padding:12px 25px; border-radius:50px; font-weight:600; cursor:pointer; }
+    .review-item { border-bottom:1px solid #ecf0f1; padding:15px 0; }
+    .review-item .user { font-weight:600; }
+    .review-item .rating { color:#f1c40f; }
+    .review-item .date { color:#7f8c8d; font-size:14px; }
+    #similarProductsGrid { grid-template-columns:repeat(4,1fr); }
+    @media (max-width:992px) { #similarProductsGrid { grid-template-columns:repeat(2,1fr); } }
+    @media (max-width:600px) { #similarProductsGrid { grid-template-columns:1fr; } }
   </style>
 </head>
 <body>
@@ -242,7 +138,8 @@
 </div>
 
 <!-- ===== МОДАЛКИ ===== -->
-<!-- ---- ВХОД ---- -->
+
+<!-- ВХОД -->
 <div class="auth-overlay" id="loginOverlay">
   <div class="auth-panel">
     <div class="auth-header">
@@ -265,7 +162,7 @@
   </div>
 </div>
 
-<!-- ---- КОРЗИНА ---- -->
+<!-- КОРЗИНА -->
 <div class="cart-overlay" id="cartOverlay">
   <div class="cart-panel">
     <div class="cart-header">
@@ -281,7 +178,7 @@
   </div>
 </div>
 
-<!-- ---- РЕГИСТРАЦИЯ ---- -->
+<!-- РЕГИСТРАЦИЯ -->
 <div class="auth-overlay" id="registerOverlay">
   <div class="auth-panel">
     <div class="auth-header">
@@ -302,7 +199,7 @@
   </div>
 </div>
 
-<!-- ---- ВОССТАНОВЛЕНИЕ ---- -->
+<!-- ВОССТАНОВЛЕНИЕ -->
 <div class="auth-overlay" id="recoverOverlay">
   <div class="auth-panel">
     <div class="auth-header">
@@ -328,7 +225,7 @@
   </div>
 </div>
 
-<!-- ---- УВЕДОМЛЕНИЯ ---- -->
+<!-- УВЕДОМЛЕНИЯ -->
 <div class="auth-overlay" id="notifOverlay">
   <div class="auth-panel" style="max-width:500px;">
     <div class="auth-header">
@@ -340,7 +237,7 @@
   </div>
 </div>
 
-<!-- ---- НОВОСТИ ---- -->
+<!-- НОВОСТИ -->
 <div class="auth-overlay" id="newsOverlay">
   <div class="auth-panel" style="max-width:600px;">
     <div class="auth-header">

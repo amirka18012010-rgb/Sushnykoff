@@ -9,6 +9,7 @@ const bcrypt = require('bcrypt');
 const Database = require('better-sqlite3');
 const http = require('http');
 const { Server } = require('socket.io');
+const sharp = require('sharp');
 
 // ---- Создаём папки ----
 ['./uploads', './uploads/backgrounds', './uploads/brands', './uploads/categories', './db'].forEach(dir => {
@@ -29,7 +30,7 @@ const PORT = process.env.PORT || 3000;
 const db = new Database('./db/database.sqlite');
 db.pragma('foreign_keys = ON');
 
-// ---- Создание таблиц ----
+// ---- Создание таблиц (все данные сохраняются) ----
 db.exec(`
   CREATE TABLE IF NOT EXISTS categories (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -70,6 +71,16 @@ db.exec(`
     password TEXT NOT NULL,
     is_blocked INTEGER DEFAULT 0,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
+  CREATE TABLE IF NOT EXISTS cart_items (
+    user_id INTEGER NOT NULL,
+    product_id INTEGER NOT NULL,
+    quantity INTEGER NOT NULL,
+    price_type TEXT DEFAULT 'retail',
+    price REAL,
+    PRIMARY KEY (user_id, product_id, price_type),
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+    FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE CASCADE
   );
   CREATE TABLE IF NOT EXISTS orders (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -124,6 +135,17 @@ db.exec(`
   );
 `);
 
+// ---- Добавляем индексы для ускорения запросов ----
+db.exec(`
+  CREATE INDEX IF NOT EXISTS idx_products_category ON products(category_id);
+  CREATE INDEX IF NOT EXISTS idx_products_brand ON products(brand_id);
+  CREATE INDEX IF NOT EXISTS idx_products_volume ON products(volume_id);
+  CREATE INDEX IF NOT EXISTS idx_products_name ON products(name);
+  CREATE INDEX IF NOT EXISTS idx_orders_user_id ON orders(user_id);
+  CREATE INDEX IF NOT EXISTS idx_cart_items_user_id ON cart_items(user_id);
+  CREATE INDEX IF NOT EXISTS idx_favorites_user_id ON favorites(user_id);
+`);
+
 // ---- Проверяем наличие колонки wholesale_price ----
 const tableInfo = db.prepare("PRAGMA table_info(products)").all();
 const hasWholesale = tableInfo.some(col => col.name === 'wholesale_price');
@@ -164,7 +186,7 @@ app.use(session({
   cookie: { maxAge: 1000 * 60 * 60 * 24 }
 }));
 
-// ---- Multer ----
+// ---- Multer с функцией сжатия изображений через Sharp ----
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
     let uploadDir = './uploads';
@@ -176,10 +198,62 @@ const storage = multer.diskStorage({
   },
   filename: (req, file, cb) => {
     const unique = Date.now() + '-' + Math.round(Math.random() * 1E9);
-    cb(null, unique + path.extname(file.originalname));
+    cb(null, unique + '.webp'); // Всегда сохраняем в WebP
   }
 });
-const upload = multer({ storage });
+
+const upload = multer({
+  storage,
+  limits: { fileSize: 5 * 1024 * 1024 }, // 5MB лимит
+  fileFilter: (req, file, cb) => {
+    const allowed = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp', 'image/gif'];
+    if (allowed.includes(file.mimetype)) {
+      cb(null, true);
+    } else {
+      cb(new Error('Неподдерживаемый формат изображения'), false);
+    }
+  }
+});
+
+// ---- Функция сжатия изображения ----
+async function compressImage(filePath, outputPath) {
+  try {
+    await sharp(filePath)
+      .resize(800, 800, { fit: 'inside', withoutEnlargement: true })
+      .webp({ quality: 70 })
+      .toFile(outputPath);
+    // Удаляем оригинал
+    fs.unlinkSync(filePath);
+    return true;
+  } catch (err) {
+    console.error('Ошибка сжатия:', err);
+    return false;
+  }
+}
+
+// ---- Обработчик загрузки с автоматическим сжатием ----
+const uploadWithCompression = async (req, res, next) => {
+  upload.single('image')(req, res, async (err) => {
+    if (err) {
+      return res.status(400).json({ error: err.message });
+    }
+    if (req.file) {
+      const outputPath = req.file.path; // уже .webp
+      try {
+        await sharp(req.file.path)
+          .resize(800, 800, { fit: 'inside', withoutEnlargement: true })
+          .webp({ quality: 70 })
+          .toFile(req.file.path + '.tmp');
+        fs.renameSync(req.file.path + '.tmp', req.file.path);
+        req.file.filename = req.file.filename; // уже .webp
+        req.file.path = req.file.path;
+      } catch (err) {
+        console.error('Ошибка сжатия:', err);
+      }
+    }
+    next();
+  });
+};
 
 // ---- Вспомогательные функции ----
 function isAdmin(req) { return req.session && req.session.isAdmin; }
@@ -187,6 +261,32 @@ function isAuthenticated(req) { return req.session && req.session.userId; }
 function isBlocked(userId) {
   const row = db.prepare('SELECT is_blocked FROM users WHERE id = ?').get(userId);
   return row ? row.is_blocked : 0;
+}
+
+// ---- Функции для работы с корзиной в БД ----
+function getCartFromDB(userId) {
+  const rows = db.prepare(`
+    SELECT product_id, quantity, price_type, price
+    FROM cart_items
+    WHERE user_id = ?
+  `).all(userId);
+  return rows.map(row => ({
+    productId: row.product_id,
+    quantity: row.quantity,
+    priceType: row.price_type,
+    price: row.price
+  }));
+}
+
+function setCartToDB(userId, cart) {
+  db.prepare('DELETE FROM cart_items WHERE user_id = ?').run(userId);
+  const insert = db.prepare(`
+    INSERT INTO cart_items (user_id, product_id, quantity, price_type, price)
+    VALUES (?, ?, ?, ?, ?)
+  `);
+  cart.forEach(item => {
+    insert.run(userId, item.productId, item.quantity, item.priceType, item.price);
+  });
 }
 
 // ============================================================
@@ -293,7 +393,6 @@ app.get('/api/products', (req, res) => {
 
     if (conditions.length) sql += ' WHERE ' + conditions.join(' AND ');
 
-    // Для подсчёта общего количества
     const countStmt = db.prepare('SELECT COUNT(*) as total FROM products p' + (conditions.length ? ' WHERE ' + conditions.join(' AND ') : ''));
     const totalRow = countStmt.get(...params);
     const total = totalRow.total;
@@ -511,15 +610,26 @@ app.post('/api/auth/reset-password', async (req, res) => {
   }
 });
 
-// ---- 14. Корзина (с поддержкой типа цены) ----
+// ---- 14. Корзина (с БД) ----
 app.get('/api/cart', (req, res) => {
-  res.json(req.session.cart || []);
+  try {
+    if (isAuthenticated(req)) {
+      const cart = getCartFromDB(req.session.userId);
+      res.json(cart);
+    } else {
+      res.json(req.session.cart || []);
+    }
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 app.post('/api/cart', (req, res) => {
   try {
     const { productId, quantity, priceType = 'retail' } = req.body;
-    let cart = req.session.cart || [];
+    if (!productId || quantity === undefined) {
+      return res.status(400).json({ error: 'Не указан товар или количество' });
+    }
     const product = db.prepare('SELECT * FROM products WHERE id = ?').get(productId);
     if (!product) return res.status(404).json({ error: 'Товар не найден' });
 
@@ -528,19 +638,37 @@ app.post('/api/cart', (req, res) => {
       price = product.wholesale_price;
     }
 
-    const existingIndex = cart.findIndex(item => item.productId === productId && item.priceType === priceType);
-    if (existingIndex !== -1) {
-      if (quantity > 0) {
-        cart[existingIndex].quantity = quantity;
-        cart[existingIndex].price = price;
-      } else {
-        cart.splice(existingIndex, 1);
+    if (isAuthenticated(req)) {
+      let cart = getCartFromDB(req.session.userId);
+      const existingIndex = cart.findIndex(item => item.productId === productId && item.priceType === priceType);
+      if (existingIndex !== -1) {
+        if (quantity > 0) {
+          cart[existingIndex].quantity = quantity;
+          cart[existingIndex].price = price;
+        } else {
+          cart.splice(existingIndex, 1);
+        }
+      } else if (quantity > 0) {
+        cart.push({ productId, quantity, priceType, price });
       }
-    } else if (quantity > 0) {
-      cart.push({ productId, quantity, priceType, price });
+      setCartToDB(req.session.userId, cart);
+      res.json(cart);
+    } else {
+      let cart = req.session.cart || [];
+      const existingIndex = cart.findIndex(item => item.productId === productId && item.priceType === priceType);
+      if (existingIndex !== -1) {
+        if (quantity > 0) {
+          cart[existingIndex].quantity = quantity;
+          cart[existingIndex].price = price;
+        } else {
+          cart.splice(existingIndex, 1);
+        }
+      } else if (quantity > 0) {
+        cart.push({ productId, quantity, priceType, price });
+      }
+      req.session.cart = cart;
+      res.json(cart);
     }
-    req.session.cart = cart;
-    res.json(cart);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -550,10 +678,32 @@ app.delete('/api/cart/:productId', (req, res) => {
   try {
     const productId = parseInt(req.params.productId);
     const priceType = req.query.priceType || 'retail';
-    let cart = req.session.cart || [];
-    cart = cart.filter(item => !(item.productId === productId && item.priceType === priceType));
-    req.session.cart = cart;
-    res.json(cart);
+    if (isAuthenticated(req)) {
+      let cart = getCartFromDB(req.session.userId);
+      cart = cart.filter(item => !(item.productId === productId && item.priceType === priceType));
+      setCartToDB(req.session.userId, cart);
+      res.json(cart);
+    } else {
+      let cart = req.session.cart || [];
+      cart = cart.filter(item => !(item.productId === productId && item.priceType === priceType));
+      req.session.cart = cart;
+      res.json(cart);
+    }
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/cart/sync', (req, res) => {
+  try {
+    if (!isAuthenticated(req)) return res.status(401).json({ error: 'Необходимо войти' });
+    const sessionCart = req.session.cart || [];
+    if (sessionCart.length > 0) {
+      setCartToDB(req.session.userId, sessionCart);
+      req.session.cart = [];
+    }
+    const dbCart = getCartFromDB(req.session.userId);
+    res.json(dbCart);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -564,7 +714,11 @@ app.post('/api/orders', (req, res) => {
   try {
     if (!isAuthenticated(req)) return res.status(401).json({ error: 'Необходимо войти' });
     if (isBlocked(req.session.userId)) return res.status(403).json({ error: 'Ваш аккаунт заблокирован' });
-    const cart = req.session.cart || [];
+
+    let cart = getCartFromDB(req.session.userId);
+    if (cart.length === 0) {
+      cart = req.session.cart || [];
+    }
     if (cart.length === 0) return res.status(400).json({ error: 'Корзина пуста' });
 
     let total = 0;
@@ -584,9 +738,12 @@ app.post('/api/orders', (req, res) => {
 
     const info = db.prepare('INSERT INTO orders (user_id, items, total, status) VALUES (?, ?, ?, ?)')
       .run(req.session.userId, JSON.stringify(orderItems), total, 'pending');
-    req.session.cart = [];
+    if (isAuthenticated(req)) {
+      db.prepare('DELETE FROM cart_items WHERE user_id = ?').run(req.session.userId);
+    } else {
+      req.session.cart = [];
+    }
 
-    // ---- Уведомление админу ----
     const orderId = info.lastInsertRowid;
     const user = db.prepare('SELECT first_name, last_name FROM users WHERE id = ?').get(req.session.userId);
     const message = `🆕 Новый заказ №${orderId} от ${user.first_name} ${user.last_name} на сумму ${total} ₽`;
@@ -619,10 +776,7 @@ app.delete('/api/orders/history', (req, res) => {
   }
 });
 
-// ============================================================
-// АДМИН-МАРШРУТЫ
-// ============================================================
-
+// ---- Админ-маршруты с сжатием изображений ----
 app.put('/api/admin/settings', (req, res) => {
   try {
     if (!isAdmin(req)) return res.status(403).json({ error: 'Доступ запрещён' });
@@ -655,7 +809,7 @@ app.get('/api/admin/status', (req, res) => {
   res.json({ isAdmin: !!req.session.isAdmin });
 });
 
-// ---- Админ: товары (с wholesale_price) ----
+// ---- Админ: товары (с сжатием) ----
 app.get('/api/admin/products', (req, res) => {
   try {
     if (!isAdmin(req)) return res.status(403).json({ error: 'Доступ запрещён' });
@@ -672,62 +826,97 @@ app.get('/api/admin/products', (req, res) => {
   }
 });
 
-app.post('/api/admin/products', upload.single('image'), (req, res) => {
+app.post('/api/admin/products', async (req, res) => {
   try {
     if (!isAdmin(req)) return res.status(403).json({ error: 'Доступ запрещён' });
-    const { name, price, category_id, brand_id, volume_id, imageUrl, description, wholesale_price } = req.body;
-    let image = '';
-    if (req.file) image = '/uploads/' + req.file.filename;
-    else if (imageUrl && imageUrl.trim() !== '') image = imageUrl.trim();
-    if (!name || !price || !category_id || !brand_id || !volume_id) {
-      return res.status(400).json({ error: 'Заполните все поля (название, цена, категория, бренд, объём)' });
-    }
-    const info = db.prepare(`
-      INSERT INTO products (name, price, category_id, brand_id, volume_id, image, description, wholesale_price)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(
-      name,
-      parseFloat(price),
-      category_id,
-      brand_id,
-      volume_id,
-      image,
-      description || '',
-      wholesale_price ? parseFloat(wholesale_price) : null
-    );
-    db.prepare('INSERT INTO notifications (message) VALUES (?)').run('Добавлен новый товар: ' + name);
-    res.json({ id: info.lastInsertRowid });
+    upload.single('image')(req, res, async (err) => {
+      if (err) return res.status(400).json({ error: err.message });
+      
+      const { name, price, category_id, brand_id, volume_id, imageUrl, description, wholesale_price } = req.body;
+      let image = '';
+      if (req.file) {
+        // Сжатие уже произошло в multer (сохраняем .webp)
+        image = '/uploads/' + req.file.filename;
+        // Дополнительное сжатие через sharp
+        try {
+          await sharp(req.file.path)
+            .resize(800, 800, { fit: 'inside', withoutEnlargement: true })
+            .webp({ quality: 70 })
+            .toFile(req.file.path + '.tmp');
+          fs.renameSync(req.file.path + '.tmp', req.file.path);
+        } catch (err) {
+          console.error('Ошибка сжатия:', err);
+        }
+      } else if (imageUrl && imageUrl.trim() !== '') {
+        image = imageUrl.trim();
+      }
+      if (!name || !price || !category_id || !brand_id || !volume_id) {
+        return res.status(400).json({ error: 'Заполните все поля (название, цена, категория, бренд, объём)' });
+      }
+      const info = db.prepare(`
+        INSERT INTO products (name, price, category_id, brand_id, volume_id, image, description, wholesale_price)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(
+        name,
+        parseFloat(price),
+        category_id,
+        brand_id,
+        volume_id,
+        image,
+        description || '',
+        wholesale_price ? parseFloat(wholesale_price) : null
+      );
+      db.prepare('INSERT INTO notifications (message) VALUES (?)').run('Добавлен новый товар: ' + name);
+      res.json({ id: info.lastInsertRowid });
+    });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-app.put('/api/admin/products/:id', upload.single('image'), (req, res) => {
+app.put('/api/admin/products/:id', async (req, res) => {
   try {
     if (!isAdmin(req)) return res.status(403).json({ error: 'Доступ запрещён' });
-    const id = req.params.id;
-    const { name, price, category_id, brand_id, volume_id, imageUrl, description, wholesale_price } = req.body;
-    let image = '';
-    if (req.file) image = '/uploads/' + req.file.filename;
-    else if (imageUrl && imageUrl.trim() !== '') image = imageUrl.trim();
-    else image = '';
-    const info = db.prepare(`
-      UPDATE products
-      SET name = ?, price = ?, category_id = ?, brand_id = ?, volume_id = ?, image = ?, description = ?, wholesale_price = ?
-      WHERE id = ?
-    `).run(
-      name,
-      parseFloat(price),
-      category_id,
-      brand_id,
-      volume_id,
-      image,
-      description || '',
-      wholesale_price ? parseFloat(wholesale_price) : null,
-      id
-    );
-    if (info.changes === 0) return res.status(404).json({ error: 'Товар не найден' });
-    res.json({ success: true });
+    upload.single('image')(req, res, async (err) => {
+      if (err) return res.status(400).json({ error: err.message });
+      
+      const id = req.params.id;
+      const { name, price, category_id, brand_id, volume_id, imageUrl, description, wholesale_price } = req.body;
+      let image = '';
+      if (req.file) {
+        image = '/uploads/' + req.file.filename;
+        try {
+          await sharp(req.file.path)
+            .resize(800, 800, { fit: 'inside', withoutEnlargement: true })
+            .webp({ quality: 70 })
+            .toFile(req.file.path + '.tmp');
+          fs.renameSync(req.file.path + '.tmp', req.file.path);
+        } catch (err) {
+          console.error('Ошибка сжатия:', err);
+        }
+      } else if (imageUrl && imageUrl.trim() !== '') {
+        image = imageUrl.trim();
+      } else {
+        image = '';
+      }
+      const info = db.prepare(`
+        UPDATE products
+        SET name = ?, price = ?, category_id = ?, brand_id = ?, volume_id = ?, image = ?, description = ?, wholesale_price = ?
+        WHERE id = ?
+      `).run(
+        name,
+        parseFloat(price),
+        category_id,
+        brand_id,
+        volume_id,
+        image,
+        description || '',
+        wholesale_price ? parseFloat(wholesale_price) : null,
+        id
+      );
+      if (info.changes === 0) return res.status(404).json({ error: 'Товар не найден' });
+      res.json({ success: true });
+    });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -744,7 +933,7 @@ app.delete('/api/admin/products/:id', (req, res) => {
   }
 });
 
-// ---- Админ: категории ----
+// ---- Админ: категории (с сжатием) ----
 app.get('/api/admin/categories', (req, res) => {
   try {
     if (!isAdmin(req)) return res.status(403).json({ error: 'Доступ запрещён' });
@@ -754,34 +943,67 @@ app.get('/api/admin/categories', (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
-app.post('/api/admin/categories', upload.single('categoryImage'), (req, res) => {
+app.post('/api/admin/categories', async (req, res) => {
   try {
     if (!isAdmin(req)) return res.status(403).json({ error: 'Доступ запрещён' });
-    const { name, icon, imageUrl } = req.body;
-    let image = '';
-    if (req.file) image = '/uploads/categories/' + req.file.filename;
-    else if (imageUrl && imageUrl.trim() !== '') image = imageUrl.trim();
-    if (!name) return res.status(400).json({ error: 'Введите название категории' });
-    const info = db.prepare('INSERT INTO categories (name, icon, image) VALUES (?, ?, ?)')
-      .run(name, icon || '', image);
-    res.json({ id: info.lastInsertRowid });
+    upload.single('categoryImage')(req, res, async (err) => {
+      if (err) return res.status(400).json({ error: err.message });
+      
+      const { name, icon, imageUrl } = req.body;
+      let image = '';
+      if (req.file) {
+        image = '/uploads/categories/' + req.file.filename;
+        try {
+          await sharp(req.file.path)
+            .resize(400, 400, { fit: 'inside', withoutEnlargement: true })
+            .webp({ quality: 70 })
+            .toFile(req.file.path + '.tmp');
+          fs.renameSync(req.file.path + '.tmp', req.file.path);
+        } catch (err) {
+          console.error('Ошибка сжатия:', err);
+        }
+      } else if (imageUrl && imageUrl.trim() !== '') {
+        image = imageUrl.trim();
+      }
+      if (!name) return res.status(400).json({ error: 'Введите название категории' });
+      const info = db.prepare('INSERT INTO categories (name, icon, image) VALUES (?, ?, ?)')
+        .run(name, icon || '', image);
+      res.json({ id: info.lastInsertRowid });
+    });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
-app.put('/api/admin/categories/:id', upload.single('categoryImage'), (req, res) => {
+app.put('/api/admin/categories/:id', async (req, res) => {
   try {
     if (!isAdmin(req)) return res.status(403).json({ error: 'Доступ запрещён' });
-    const id = req.params.id;
-    const { name, icon, imageUrl } = req.body;
-    let image = '';
-    if (req.file) image = '/uploads/categories/' + req.file.filename;
-    else if (imageUrl && imageUrl.trim() !== '') image = imageUrl.trim();
-    else image = '';
-    const info = db.prepare('UPDATE categories SET name = ?, icon = ?, image = ? WHERE id = ?')
-      .run(name, icon || '', image, id);
-    if (info.changes === 0) return res.status(404).json({ error: 'Категория не найдена' });
-    res.json({ success: true });
+    upload.single('categoryImage')(req, res, async (err) => {
+      if (err) return res.status(400).json({ error: err.message });
+      
+      const id = req.params.id;
+      const { name, icon, imageUrl } = req.body;
+      let image = '';
+      if (req.file) {
+        image = '/uploads/categories/' + req.file.filename;
+        try {
+          await sharp(req.file.path)
+            .resize(400, 400, { fit: 'inside', withoutEnlargement: true })
+            .webp({ quality: 70 })
+            .toFile(req.file.path + '.tmp');
+          fs.renameSync(req.file.path + '.tmp', req.file.path);
+        } catch (err) {
+          console.error('Ошибка сжатия:', err);
+        }
+      } else if (imageUrl && imageUrl.trim() !== '') {
+        image = imageUrl.trim();
+      } else {
+        image = '';
+      }
+      const info = db.prepare('UPDATE categories SET name = ?, icon = ?, image = ? WHERE id = ?')
+        .run(name, icon || '', image, id);
+      if (info.changes === 0) return res.status(404).json({ error: 'Категория не найдена' });
+      res.json({ success: true });
+    });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -797,7 +1019,7 @@ app.delete('/api/admin/categories/:id', (req, res) => {
   }
 });
 
-// ---- Админ: бренды ----
+// ---- Админ: бренды (с сжатием) ----
 app.get('/api/admin/brands', (req, res) => {
   try {
     if (!isAdmin(req)) return res.status(403).json({ error: 'Доступ запрещён' });
@@ -812,34 +1034,67 @@ app.get('/api/admin/brands', (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
-app.post('/api/admin/brands', upload.single('image'), (req, res) => {
+app.post('/api/admin/brands', async (req, res) => {
   try {
     if (!isAdmin(req)) return res.status(403).json({ error: 'Доступ запрещён' });
-    const { name, description, category_id, imageUrl } = req.body;
-    let image = '';
-    if (req.file) image = '/uploads/brands/' + req.file.filename;
-    else if (imageUrl && imageUrl.trim() !== '') image = imageUrl.trim();
-    if (!name || !category_id) return res.status(400).json({ error: 'Заполните название и категорию' });
-    const info = db.prepare('INSERT INTO brands (name, description, image, category_id) VALUES (?, ?, ?, ?)')
-      .run(name, description || '', image, category_id);
-    res.json({ id: info.lastInsertRowid });
+    upload.single('image')(req, res, async (err) => {
+      if (err) return res.status(400).json({ error: err.message });
+      
+      const { name, description, category_id, imageUrl } = req.body;
+      let image = '';
+      if (req.file) {
+        image = '/uploads/brands/' + req.file.filename;
+        try {
+          await sharp(req.file.path)
+            .resize(600, 600, { fit: 'inside', withoutEnlargement: true })
+            .webp({ quality: 70 })
+            .toFile(req.file.path + '.tmp');
+          fs.renameSync(req.file.path + '.tmp', req.file.path);
+        } catch (err) {
+          console.error('Ошибка сжатия:', err);
+        }
+      } else if (imageUrl && imageUrl.trim() !== '') {
+        image = imageUrl.trim();
+      }
+      if (!name || !category_id) return res.status(400).json({ error: 'Заполните название и категорию' });
+      const info = db.prepare('INSERT INTO brands (name, description, image, category_id) VALUES (?, ?, ?, ?)')
+        .run(name, description || '', image, category_id);
+      res.json({ id: info.lastInsertRowid });
+    });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
-app.put('/api/admin/brands/:id', upload.single('image'), (req, res) => {
+app.put('/api/admin/brands/:id', async (req, res) => {
   try {
     if (!isAdmin(req)) return res.status(403).json({ error: 'Доступ запрещён' });
-    const id = req.params.id;
-    const { name, description, category_id, imageUrl } = req.body;
-    let image = '';
-    if (req.file) image = '/uploads/brands/' + req.file.filename;
-    else if (imageUrl && imageUrl.trim() !== '') image = imageUrl.trim();
-    else image = '';
-    const info = db.prepare('UPDATE brands SET name = ?, description = ?, image = ?, category_id = ? WHERE id = ?')
-      .run(name, description || '', image, category_id, id);
-    if (info.changes === 0) return res.status(404).json({ error: 'Бренд не найден' });
-    res.json({ success: true });
+    upload.single('image')(req, res, async (err) => {
+      if (err) return res.status(400).json({ error: err.message });
+      
+      const id = req.params.id;
+      const { name, description, category_id, imageUrl } = req.body;
+      let image = '';
+      if (req.file) {
+        image = '/uploads/brands/' + req.file.filename;
+        try {
+          await sharp(req.file.path)
+            .resize(600, 600, { fit: 'inside', withoutEnlargement: true })
+            .webp({ quality: 70 })
+            .toFile(req.file.path + '.tmp');
+          fs.renameSync(req.file.path + '.tmp', req.file.path);
+        } catch (err) {
+          console.error('Ошибка сжатия:', err);
+        }
+      } else if (imageUrl && imageUrl.trim() !== '') {
+        image = imageUrl.trim();
+      } else {
+        image = '';
+      }
+      const info = db.prepare('UPDATE brands SET name = ?, description = ?, image = ?, category_id = ? WHERE id = ?')
+        .run(name, description || '', image, category_id, id);
+      if (info.changes === 0) return res.status(404).json({ error: 'Бренд не найден' });
+      res.json({ success: true });
+    });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -977,7 +1232,7 @@ app.delete('/api/admin/news/:id', (req, res) => {
   }
 });
 
-// ---- Админ: заказы (с уведомлением пользователя) ----
+// ---- Админ: заказы ----
 app.get('/api/admin/orders', (req, res) => {
   try {
     if (!isAdmin(req)) return res.status(403).json({ error: 'Доступ запрещён' });
@@ -997,14 +1252,10 @@ app.put('/api/admin/orders/:id', (req, res) => {
     if (!isAdmin(req)) return res.status(403).json({ error: 'Доступ запрещён' });
     const { status } = req.body;
     if (!status) return res.status(400).json({ error: 'Укажите статус' });
-    
     const order = db.prepare('SELECT user_id FROM orders WHERE id = ?').get(req.params.id);
     if (!order) return res.status(404).json({ error: 'Заказ не найден' });
-
     const info = db.prepare('UPDATE orders SET status = ? WHERE id = ?').run(status, req.params.id);
     if (info.changes === 0) return res.status(404).json({ error: 'Заказ не найден' });
-
-    // Уведомление пользователю
     const statusMap = {
       pending: 'ожидает подтверждения',
       paid: 'оплачен',
@@ -1015,21 +1266,35 @@ app.put('/api/admin/orders/:id', (req, res) => {
     const message = `📦 Статус заказа №${req.params.id} изменён на «${statusText}»`;
     db.prepare('INSERT INTO notifications (message) VALUES (?)').run(message);
     io.to(`user_${order.user_id}`).emit('order-status-changed', { orderId: req.params.id, status, statusText, message });
-
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-// ---- Админ: фон ----
-app.post('/api/admin/upload-background', upload.single('background'), (req, res) => {
+// ---- Админ: фон (с сжатием) ----
+app.post('/api/admin/upload-background', async (req, res) => {
   try {
     if (!isAdmin(req)) return res.status(403).json({ error: 'Доступ запрещён' });
-    if (!req.file) return res.status(400).json({ error: 'Файл не загружен' });
-    const filePath = '/uploads/backgrounds/' + req.file.filename;
-    db.prepare('UPDATE settings SET value = ? WHERE key = ?').run(filePath, 'site_background');
-    res.json({ success: true, path: filePath });
+    upload.single('background')(req, res, async (err) => {
+      if (err) return res.status(400).json({ error: err.message });
+      if (!req.file) return res.status(400).json({ error: 'Файл не загружен' });
+      
+      // Сжатие фона
+      try {
+        await sharp(req.file.path)
+          .resize(1920, 1080, { fit: 'inside', withoutEnlargement: true })
+          .webp({ quality: 75 })
+          .toFile(req.file.path + '.tmp');
+        fs.renameSync(req.file.path + '.tmp', req.file.path);
+      } catch (err) {
+        console.error('Ошибка сжатия фона:', err);
+      }
+      
+      const filePath = '/uploads/backgrounds/' + req.file.filename;
+      db.prepare('UPDATE settings SET value = ? WHERE key = ?').run(filePath, 'site_background');
+      res.json({ success: true, path: filePath });
+    });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -1045,7 +1310,7 @@ app.put('/api/admin/background', (req, res) => {
   }
 });
 
-// ---- Динамическая карта сайта ----
+// ---- Sitemap ----
 app.get('/sitemap.xml', (req, res) => {
   try {
     const baseUrl = 'https://sushnykoff.onrender.com';
@@ -1070,26 +1335,22 @@ app.get('/sitemap.xml', (req, res) => {
   }
 });
 
-// ---- WebSocket обработчики ----
+// ---- WebSocket ----
 io.on('connection', (socket) => {
   console.log('🔌 Новое подключение:', socket.id);
-  
   socket.on('register-user', (data) => {
     if (data && data.userId) {
-      // Добавляем сокет в комнату пользователя
       socket.join(`user_${data.userId}`);
       console.log(`✅ Пользователь ${data.userId} подключён к комнате user_${data.userId}`);
     }
-    // Если админ, добавляем в комнату admin (можно по роли, но для простоты – все)
     socket.join('admin');
   });
-
   socket.on('disconnect', () => {
     console.log('🔌 Отключение:', socket.id);
   });
 });
 
-// ---- ЗАПУСК ----
+// ---- Запуск ----
 server.listen(PORT, () => {
   console.log(`✅ Сервер запущен на http://localhost:${PORT}`);
 });

@@ -6,7 +6,6 @@
   <title>Администрирование — Sushnykoff</title>
   <link rel="stylesheet" href="style.css">
   <style>
-    /* ---- Стили админки ---- */
     .admin-login { max-width:400px; margin:100px auto; padding:30px; background:white; border-radius:24px; box-shadow:0 20px 60px rgba(0,0,0,0.08); }
     .admin-login input { width:100%; padding:12px 16px; margin:8px 0; border:1px solid #ecf0f1; border-radius:16px; }
     .admin-login button { width:100%; padding:14px; background:#27ae60; color:white; border:none; border-radius:40px; font-weight:700; cursor:pointer; }
@@ -37,7 +36,6 @@
 </head>
 <body>
 <div class="container">
-  <!-- Форма входа -->
   <div id="adminLogin" class="admin-login">
     <h2 style="margin-bottom:16px;">🔐 Вход в админку</h2>
     <input type="text" id="loginInput" placeholder="Логин" value="admin">
@@ -46,7 +44,6 @@
     <div id="loginError" style="color:#e74c3c; margin-top:10px;"></div>
   </div>
 
-  <!-- Панель администрирования -->
   <div id="adminPanel" class="admin-panel">
     <header class="header glass">
       <h1>⚙️ Администрирование Sushnykoff</h1>
@@ -65,7 +62,6 @@
       </div>
     </header>
 
-    <!-- Вкладка: Товары -->
     <div id="tab-products" class="tab-content active">
       <form id="productForm" class="admin-form">
         <input type="hidden" id="editId" value="">
@@ -82,7 +78,6 @@
       <div id="adminProductList"></div>
     </div>
 
-    <!-- Вкладка: Категории -->
     <div id="tab-categories" class="tab-content">
       <h3 style="margin-bottom:16px;">Управление категориями</h3>
       <form id="categoryForm" class="admin-form">
@@ -99,7 +94,6 @@
       <div id="categoryList"></div>
     </div>
 
-    <!-- Вкладка: Бренды -->
     <div id="tab-brands" class="tab-content">
       <h3 style="margin-bottom:16px;">Управление брендами</h3>
       <form id="brandForm" class="admin-form">
@@ -113,7 +107,6 @@
       <div id="brandList"></div>
     </div>
 
-    <!-- Вкладка: Объёмы -->
     <div id="tab-volumes" class="tab-content">
       <h3 style="margin-bottom:16px;">Управление объёмами</h3>
       <form id="volumeForm" class="admin-form">
@@ -125,19 +118,16 @@
       <div id="volumeList"></div>
     </div>
 
-    <!-- Вкладка: Заказы -->
     <div id="tab-orders" class="tab-content">
       <h3 style="margin-bottom:16px;">Список заказов</h3>
       <div id="ordersList"></div>
     </div>
 
-    <!-- Вкладка: Пользователи -->
     <div id="tab-users" class="tab-content">
       <h3 style="margin-bottom:16px;">Список пользователей</h3>
       <div id="usersList"></div>
     </div>
 
-    <!-- Вкладка: Новости -->
     <div id="tab-news" class="tab-content">
       <h3 style="margin-bottom:16px;">Управление новостями</h3>
       <form id="newsForm" class="admin-form">
@@ -150,7 +140,6 @@
       <div id="newsList"></div>
     </div>
 
-    <!-- Вкладка: Настройки -->
     <div id="tab-settings" class="tab-content">
       <h3 style="margin-bottom:16px;">Настройки сайта</h3>
       <form id="settingsForm" class="admin-form">
@@ -164,7 +153,6 @@
       <div id="settingsMessage" style="margin-top:10px;"></div>
     </div>
 
-    <!-- Вкладка: Дизайн -->
     <div id="tab-design" class="tab-content">
       <h3 style="margin-bottom:16px;">Настройка фона сайта</h3>
       <div class="admin-form">
@@ -175,17 +163,35 @@
         <div id="bgMessage" class="full-width"></div>
       </div>
     </div>
-
   </div>
 </div>
 
 <script>
-  // ===== ПОЛНЫЙ СКРИПТ АДМИНКИ =====
+  // ===== ПОЛНЫЙ СКРИПТ АДМИНКИ С ОЧИСТКОЙ КЕША =====
   const loginDiv = document.getElementById('adminLogin');
   const panelDiv = document.getElementById('adminPanel');
   const loginBtn = document.getElementById('loginBtn');
   const logoutBtn = document.getElementById('logoutBtn');
   const loginError = document.getElementById('loginError');
+
+  // ---- Очистка кеша на клиенте (вызывается из функций) ----
+  function clearClientCache(key) {
+    if (window.clearCache) {
+      window.clearCache(key);
+    } else {
+      // fallback
+      if (key) {
+        localStorage.removeItem(key);
+      } else {
+        const keys = Object.keys(localStorage);
+        keys.forEach(k => {
+          if (k.startsWith('products_') || k === 'categories' || k === 'brands' || k === 'volumes' || k === 'background') {
+            localStorage.removeItem(k);
+          }
+        });
+      }
+    }
+  }
 
   // ---- Проверка статуса ----
   fetch('/api/admin/status')
@@ -403,8 +409,9 @@
       });
   });
 
-  // ---- Категории (админ) ----
+  // ---- Категории (админ) с очисткой кеша ----
   function loadCategoriesAdmin() {
+    // Всегда запрашиваем с сервера, игнорируем кеш
     fetch('/api/admin/categories')
       .then(r => r.json())
       .then(cats => {
@@ -446,6 +453,7 @@
               const id = parseInt(btn.dataset.id);
               fetch(`/api/admin/categories/${id}`, { method: 'DELETE' })
                 .then(() => {
+                  clearClientCache('categories');
                   loadCategoriesAdmin();
                   loadCategoriesSelect();
                 });
@@ -471,6 +479,7 @@
     const method = id ? 'PUT' : 'POST';
     fetch(url, { method, body: formData })
       .then(() => {
+        clearClientCache('categories');
         loadCategoriesAdmin();
         loadCategoriesSelect();
         document.getElementById('categoryForm').reset();
@@ -524,6 +533,7 @@
               const id = parseInt(btn.dataset.id);
               fetch(`/api/admin/brands/${id}`, { method: 'DELETE' })
                 .then(() => {
+                  clearClientCache('brands');
                   loadBrandsAdmin();
                   loadCategoriesSelect();
                 });
@@ -554,6 +564,7 @@
       .then(data => {
         if (data.error) alert(data.error);
         else {
+          clearClientCache('brands');
           loadBrandsAdmin();
           document.getElementById('brandForm').reset();
           document.getElementById('editBrandId').value = '';
@@ -598,7 +609,10 @@
             if (confirm('Удалить объём?')) {
               const id = parseInt(btn.dataset.id);
               fetch(`/api/admin/volumes/${id}`, { method: 'DELETE' })
-                .then(() => loadVolumesAdmin());
+                .then(() => {
+                  clearClientCache('volumes');
+                  loadVolumesAdmin();
+                });
             }
           });
         });
@@ -618,6 +632,7 @@
       body: JSON.stringify({ name, sort_order })
     })
       .then(() => {
+        clearClientCache('volumes');
         loadVolumesAdmin();
         document.getElementById('volumeForm').reset();
         document.getElementById('editVolumeId').value = '';
@@ -888,6 +903,7 @@
         const msg = document.getElementById('bgMessage');
         if (data.success) {
           msg.innerHTML = '<span style="color:green;">✅ Фон обновлён!</span>';
+          clearClientCache('background');
           loadBgPreview();
           document.getElementById('bgUrl').value = '';
         } else {
@@ -913,6 +929,7 @@
         const msg = document.getElementById('bgMessage');
         if (data.success) {
           msg.innerHTML = '<span style="color:green;">✅ Фон загружен!</span>';
+          clearClientCache('background');
           loadBgPreview();
           document.getElementById('bgFile').value = '';
         } else {
@@ -936,6 +953,7 @@
         const msg = document.getElementById('bgMessage');
         if (data.success) {
           msg.innerHTML = '<span style="color:green;">✅ Фон удалён</span>';
+          clearClientCache('background');
           loadBgPreview();
         } else {
           msg.innerHTML = '<span style="color:red;">❌ Ошибка: ' + data.error + '</span>';
