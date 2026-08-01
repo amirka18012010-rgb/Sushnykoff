@@ -744,11 +744,8 @@ app.put('/api/admin/settings', async (req, res) => {
 app.post('/api/admin/login', (req, res) => {
   try {
     const { login, password } = req.body;
-    
-    // Берем логин и пароль из .env или переменных Render
     const adminLogin = process.env.ADMIN_LOGIN || 'admin';
     const adminPassword = process.env.ADMIN_PASSWORD || 'admin123';
-
     if (login === adminLogin && password === adminPassword) {
       req.session.isAdmin = true;
       res.json({ success: true });
@@ -801,14 +798,12 @@ app.post('/api/admin/products', upload.single('image'), async (req, res) => {
     if (!isAdmin(req)) return res.status(403).json({ error: 'Доступ запрещён' });
     const { name, price, category_id, brand_id, volume_id, imageUrl, description, wholesale_price } = req.body;
     let image = '';
-    
     if (req.file) {
       const publicUrl = await uploadToStorage(req.file, 'products');
       if (publicUrl) image = publicUrl;
     } else if (imageUrl && imageUrl.trim() !== '') {
       image = imageUrl.trim();
     }
-    
     if (!name || !price || !category_id || !brand_id || !volume_id) {
       return res.status(400).json({ error: 'Заполните все поля (название, цена, категория, бренд, объём)' });
     }
@@ -839,7 +834,6 @@ app.put('/api/admin/products/:id', upload.single('image'), async (req, res) => {
     const id = req.params.id;
     const { name, price, category_id, brand_id, volume_id, imageUrl, description, wholesale_price } = req.body;
     let image = '';
-    
     if (req.file) {
       const publicUrl = await uploadToStorage(req.file, 'products');
       if (publicUrl) image = publicUrl;
@@ -849,7 +843,6 @@ app.put('/api/admin/products/:id', upload.single('image'), async (req, res) => {
       const { data: old } = await supabase.from('products').select('image').eq('id', id).single();
       if (old) image = old.image;
     }
-    
     const { error } = await supabase
       .from('products')
       .update({
@@ -881,7 +874,7 @@ app.delete('/api/admin/products/:id', async (req, res) => {
   }
 });
 
-// ---- Админ: категории ----
+// ---- Админ: категории (исправленный) ----
 app.get('/api/admin/categories', async (req, res) => {
   try {
     if (!isAdmin(req)) return res.status(403).json({ error: 'Доступ запрещён' });
@@ -898,14 +891,12 @@ app.post('/api/admin/categories', upload.single('categoryImage'), async (req, re
     if (!isAdmin(req)) return res.status(403).json({ error: 'Доступ запрещён' });
     const { name, icon, imageUrl } = req.body;
     let image = '';
-    
     if (req.file) {
       const publicUrl = await uploadToStorage(req.file, 'categories');
       if (publicUrl) image = publicUrl;
     } else if (imageUrl && imageUrl.trim() !== '') {
       image = imageUrl.trim();
     }
-    
     if (!name) return res.status(400).json({ error: 'Введите название категории' });
     const { data, error } = await supabase
       .from('categories')
@@ -914,6 +905,7 @@ app.post('/api/admin/categories', upload.single('categoryImage'), async (req, re
     if (error) throw error;
     res.json({ id: data[0].id });
   } catch (err) {
+    console.error('Ошибка добавления категории:', err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -924,7 +916,6 @@ app.put('/api/admin/categories/:id', upload.single('categoryImage'), async (req,
     const id = req.params.id;
     const { name, icon, imageUrl } = req.body;
     let image = '';
-    
     if (req.file) {
       const publicUrl = await uploadToStorage(req.file, 'categories');
       if (publicUrl) image = publicUrl;
@@ -934,7 +925,6 @@ app.put('/api/admin/categories/:id', upload.single('categoryImage'), async (req,
       const { data: old } = await supabase.from('categories').select('image').eq('id', id).single();
       if (old) image = old.image;
     }
-    
     const { error } = await supabase
       .from('categories')
       .update({ name, icon: icon || '', image })
@@ -984,14 +974,12 @@ app.post('/api/admin/brands', upload.single('image'), async (req, res) => {
     if (!isAdmin(req)) return res.status(403).json({ error: 'Доступ запрещён' });
     const { name, description, category_id, imageUrl } = req.body;
     let image = '';
-    
     if (req.file) {
       const publicUrl = await uploadToStorage(req.file, 'brands');
       if (publicUrl) image = publicUrl;
     } else if (imageUrl && imageUrl.trim() !== '') {
       image = imageUrl.trim();
     }
-    
     if (!name || !category_id) return res.status(400).json({ error: 'Заполните название и категорию' });
     const { data, error } = await supabase
       .from('brands')
@@ -1010,7 +998,6 @@ app.put('/api/admin/brands/:id', upload.single('image'), async (req, res) => {
     const id = req.params.id;
     const { name, description, category_id, imageUrl } = req.body;
     let image = '';
-    
     if (req.file) {
       const publicUrl = await uploadToStorage(req.file, 'brands');
       if (publicUrl) image = publicUrl;
@@ -1020,7 +1007,6 @@ app.put('/api/admin/brands/:id', upload.single('image'), async (req, res) => {
       const { data: old } = await supabase.from('brands').select('image').eq('id', id).single();
       if (old) image = old.image;
     }
-    
     const { error } = await supabase
       .from('brands')
       .update({ name, description: description || '', image, category_id })
@@ -1253,12 +1239,10 @@ app.post('/api/admin/upload-background', upload.single('background'), async (req
   try {
     if (!isAdmin(req)) return res.status(403).json({ error: 'Доступ запрещён' });
     if (!req.file) return res.status(400).json({ error: 'Файл не загружен' });
-    
     const publicUrl = await uploadToStorage(req.file, 'backgrounds');
     if (!publicUrl) {
       return res.status(500).json({ error: 'Не удалось загрузить изображение' });
     }
-    
     await supabase.from('settings').update({ value: publicUrl }).eq('key', 'site_background');
     res.json({ success: true, path: publicUrl });
   } catch (err) {
