@@ -63,7 +63,7 @@
     </header>
 
     <div id="tab-products" class="tab-content active">
-      <form id="productForm" class="admin-form">
+      <form id="productForm" class="admin-form" enctype="multipart/form-data">
         <input type="hidden" id="editId" value="">
         <div><label>Название *</label><input type="text" id="productName" required></div>
         <div><label>Цена (₽) *</label><input type="number" id="productPrice" required min="0" step="0.01"></div>
@@ -71,7 +71,7 @@
         <div><label>Категория *</label><select id="productCategory" required></select></div>
         <div><label>Бренд *</label><select id="productBrand" required></select></div>
         <div><label>Объём *</label><select id="productVolume" required></select></div>
-        <div><label>Фото (ссылка или файл)</label><input type="text" id="productImageUrl" placeholder="https://..."><input type="file" id="productImage" accept="image/*" style="margin-top:6px;"></div>
+        <div><label>Фото (ссылка или файл)</label><input type="text" id="productImageUrl" placeholder="https://..."><input type="file" id="productImage" accept="image/*" name="image" style="margin-top:6px;"></div>
         <div class="full-width"><label>Описание</label><textarea id="productDescription" rows="3"></textarea></div>
         <button type="submit" id="formSubmitBtn" style="grid-column:1/-1; padding:14px; background:#27ae60; color:white; border:none; border-radius:40px; font-weight:700; cursor:pointer;">➕ Добавить товар</button>
       </form>
@@ -80,13 +80,13 @@
 
     <div id="tab-categories" class="tab-content">
       <h3 style="margin-bottom:16px;">Управление категориями</h3>
-      <form id="categoryForm" class="admin-form">
+      <form id="categoryForm" class="admin-form" enctype="multipart/form-data">
         <div class="full-width">
           <label>Название категории *</label><input type="text" id="categoryName" placeholder="Например: Минеральная вода" required>
           <label style="margin-top:10px;">Иконка (эмодзи)</label><input type="text" id="categoryIcon" placeholder="💧">
           <label style="margin-top:10px;">Фото (ссылкой или файлом)</label>
           <input type="text" id="categoryImageUrl" placeholder="https://example.com/cat.jpg">
-          <input type="file" id="categoryImageFile" accept="image/*" style="margin-top:6px;">
+          <input type="file" id="categoryImageFile" accept="image/*" name="categoryImage" style="margin-top:6px;">
           <input type="hidden" id="editCategoryId">
         </div>
         <button type="submit" id="categorySubmitBtn" style="grid-column:1/-1; padding:14px; background:#27ae60; color:white; border:none; border-radius:40px; font-weight:700; cursor:pointer;">➕ Добавить категорию</button>
@@ -96,12 +96,12 @@
 
     <div id="tab-brands" class="tab-content">
       <h3 style="margin-bottom:16px;">Управление брендами</h3>
-      <form id="brandForm" class="admin-form">
+      <form id="brandForm" class="admin-form" enctype="multipart/form-data">
         <input type="hidden" id="editBrandId">
         <div><label>Название бренда *</label><input type="text" id="brandName" required></div>
         <div><label>Категория *</label><select id="brandCategory" required></select></div>
         <div class="full-width"><label>Описание</label><textarea id="brandDescription" rows="2"></textarea></div>
-        <div class="full-width"><label>Фото (баннер) — ссылка или файл</label><input type="text" id="brandImageUrl" placeholder="https://..."><input type="file" id="brandImageFile" accept="image/*" style="margin-top:6px;"></div>
+        <div class="full-width"><label>Фото (баннер) — ссылка или файл</label><input type="text" id="brandImageUrl" placeholder="https://..."><input type="file" id="brandImageFile" accept="image/*" name="image" style="margin-top:6px;"></div>
         <button type="submit" id="brandSubmitBtn" style="grid-column:1/-1; padding:14px; background:#27ae60; color:white; border:none; border-radius:40px; font-weight:700; cursor:pointer;">➕ Добавить бренд</button>
       </form>
       <div id="brandList"></div>
@@ -158,28 +158,28 @@
       <div class="admin-form">
         <div class="full-width"><label>Текущий фон</label><div id="bgPreview" class="preview-box"><span class="empty">Фон не установлен</span></div></div>
         <div class="full-width"><label>Установить фон по ссылке</label><div class="bg-form-row"><input type="text" id="bgUrl" placeholder="https://example.com/image.jpg"><button id="setBgUrlBtn" class="btn-green">Применить</button></div></div>
-        <div class="full-width"><label>Или загрузить изображение</label><div class="bg-form-row"><input type="file" id="bgFile" accept="image/*"><button id="uploadBgBtn" class="btn-green">Загрузить</button></div></div>
+        <div class="full-width"><label>Или загрузить изображение</label><div class="bg-form-row"><input type="file" id="bgFile" accept="image/*" name="background"><button id="uploadBgBtn" class="btn-green">Загрузить</button></div></div>
         <div class="full-width"><button id="removeBgBtn" class="btn-red">Удалить фон</button></div>
         <div id="bgMessage" class="full-width"></div>
       </div>
     </div>
+
   </div>
 </div>
 
 <script>
-  // ===== ПОЛНЫЙ СКРИПТ АДМИНКИ С ОЧИСТКОЙ КЕША =====
+  // ===== ПОЛНЫЙ СКРИПТ АДМИНКИ (с исправленными формами) =====
   const loginDiv = document.getElementById('adminLogin');
   const panelDiv = document.getElementById('adminPanel');
   const loginBtn = document.getElementById('loginBtn');
   const logoutBtn = document.getElementById('logoutBtn');
   const loginError = document.getElementById('loginError');
 
-  // ---- Очистка кеша на клиенте (вызывается из функций) ----
+  // ---- Очистка кеша на клиенте ----
   function clearClientCache(key) {
     if (window.clearCache) {
       window.clearCache(key);
     } else {
-      // fallback
       if (key) {
         localStorage.removeItem(key);
       } else {
@@ -411,7 +411,6 @@
 
   // ---- Категории (админ) с очисткой кеша ----
   function loadCategoriesAdmin() {
-    // Всегда запрашиваем с сервера, игнорируем кеш
     fetch('/api/admin/categories')
       .then(r => r.json())
       .then(cats => {
