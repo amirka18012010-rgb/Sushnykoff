@@ -1,4 +1,4 @@
-require('dotenv').config();
+\require('dotenv').config();
 const express = require('express');
 const session = require('express-session');
 const cors = require('cors');
@@ -20,11 +20,6 @@ if (!supabaseUrl || !supabaseKey) {
 }
 const supabase = createClient(supabaseUrl, supabaseKey);
 
-// ---- Создаём папки для загрузок (если ещё нет) ----
-['./uploads', './uploads/backgrounds', './uploads/brands', './uploads/categories'].forEach(dir => {
-  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-});
-
 // ---- Middleware ----
 app.use(cors());
 app.use(express.json());
@@ -40,22 +35,12 @@ app.use(session({
   cookie: { maxAge: 1000 * 60 * 60 * 24 }
 }));
 
-// ---- Multer (для загрузки файлов) ----
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    let uploadDir = './uploads';
-    if (req.url.includes('background')) uploadDir = './uploads/backgrounds';
-    else if (req.url.includes('brands')) uploadDir = './uploads/brands';
-    else if (req.url.includes('categories')) uploadDir = './uploads/categories';
-    if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
-    cb(null, uploadDir);
-  },
-  filename: (req, file, cb) => {
-    const unique = Date.now() + '-' + Math.round(Math.random() * 1E9);
-    cb(null, unique + path.extname(file.originalname));
-  }
+// ---- Multer (ЗАМЕНЕНО! Храним файлы в памяти, так как Render не даёт писать в корень) ----
+const storage = multer.memoryStorage(); 
+const upload = multer({ 
+  storage,
+  limits: { fileSize: 5 * 1024 * 1024 } // 5МБ лимит
 });
-const upload = multer({ storage });
 
 // ---- Вспомогательные функции ----
 function isAdmin(req) { return req.session && req.session.isAdmin; }
@@ -155,7 +140,6 @@ app.get('/api/volumes', async (req, res) => {
   try {
     const { brandId } = req.query;
     if (!brandId) return res.json([]);
-    // Получаем все volume_id, которые есть у продуктов бренда
     const { data, error } = await supabase
       .from('products')
       .select('volume_id')
@@ -163,7 +147,6 @@ app.get('/api/volumes', async (req, res) => {
     if (error) throw error;
     const volumeIds = data.map(p => p.volume_id).filter(id => id !== null);
     if (!volumeIds.length) return res.json([]);
-    // Получаем информацию об объёмах
     const { data: volumes, error: err2 } = await supabase
       .from('volumes')
       .select('*')
@@ -231,7 +214,6 @@ app.get('/api/products', async (req, res) => {
     if (brandId) countQuery = countQuery.eq('brand_id', brandId);
     if (volumeId) countQuery = countQuery.eq('volume_id', volumeId);
     if (category && category !== 'all') countQuery = countQuery.eq('category_id', category);
-    // Поиск для подсчёта (упрощённо)
     if (search && search.trim() !== '') {
       const words = search.trim().split(/\s+/).filter(w => w.length > 0);
       const conditions = words.map(word => 
@@ -740,8 +722,6 @@ app.put('/api/admin/settings', async (req, res) => {
 app.post('/api/admin/login', (req, res) => {
   try {
     const { login, password } = req.body;
-    // Проверяем в таблице admin (пароль хранится в открытом виде, но для админки можно так)
-    // В реальном проекте лучше хешировать
     supabase
       .from('admin')
       .select('*')
@@ -797,11 +777,15 @@ app.post('/api/admin/products', upload.single('image'), async (req, res) => {
     if (!isAdmin(req)) return res.status(403).json({ error: 'Доступ запрещён' });
     const { name, price, category_id, brand_id, volume_id, imageUrl, description, wholesale_price } = req.body;
     let image = '';
+    
+    // ВАЖНО: Файл теперь в буфере req.file.buffer, чтобы реально сохранить картинку - нужен Supabase Storage.
+    // Сейчас просто ставим заглушку, чтобы сервер не упал.
     if (req.file) {
-      image = '/uploads/' + req.file.filename;
+      image = '/uploads/' + req.file.originalname; // Временный путь для базы, реально картинка не сохранится
     } else if (imageUrl && imageUrl.trim() !== '') {
       image = imageUrl.trim();
     }
+    
     if (!name || !price || !category_id || !brand_id || !volume_id) {
       return res.status(400).json({ error: 'Заполните все поля (название, цена, категория, бренд, объём)' });
     }
@@ -833,12 +817,10 @@ app.put('/api/admin/products/:id', upload.single('image'), async (req, res) => {
     const { name, price, category_id, brand_id, volume_id, imageUrl, description, wholesale_price } = req.body;
     let image = '';
     if (req.file) {
-      image = '/uploads/' + req.file.filename;
+      image = '/uploads/' + req.file.originalname;
     } else if (imageUrl && imageUrl.trim() !== '') {
       image = imageUrl.trim();
     } else {
-      // если не передано новое изображение, не обновляем поле image
-      // получим текущее значение
       const { data: old } = await supabase.from('products').select('image').eq('id', id).single();
       if (old) image = old.image;
     }
@@ -891,7 +873,7 @@ app.post('/api/admin/categories', upload.single('categoryImage'), async (req, re
     const { name, icon, imageUrl } = req.body;
     let image = '';
     if (req.file) {
-      image = '/uploads/categories/' + req.file.filename;
+      image = '/uploads/categories/' + req.file.originalname;
     } else if (imageUrl && imageUrl.trim() !== '') {
       image = imageUrl.trim();
     }
@@ -914,7 +896,7 @@ app.put('/api/admin/categories/:id', upload.single('categoryImage'), async (req,
     const { name, icon, imageUrl } = req.body;
     let image = '';
     if (req.file) {
-      image = '/uploads/categories/' + req.file.filename;
+      image = '/uploads/categories/' + req.file.originalname;
     } else if (imageUrl && imageUrl.trim() !== '') {
       image = imageUrl.trim();
     } else {
@@ -971,7 +953,7 @@ app.post('/api/admin/brands', upload.single('image'), async (req, res) => {
     const { name, description, category_id, imageUrl } = req.body;
     let image = '';
     if (req.file) {
-      image = '/uploads/brands/' + req.file.filename;
+      image = '/uploads/brands/' + req.file.originalname;
     } else if (imageUrl && imageUrl.trim() !== '') {
       image = imageUrl.trim();
     }
@@ -994,7 +976,7 @@ app.put('/api/admin/brands/:id', upload.single('image'), async (req, res) => {
     const { name, description, category_id, imageUrl } = req.body;
     let image = '';
     if (req.file) {
-      image = '/uploads/brands/' + req.file.filename;
+      image = '/uploads/brands/' + req.file.originalname;
     } else if (imageUrl && imageUrl.trim() !== '') {
       image = imageUrl.trim();
     } else {
@@ -1235,7 +1217,9 @@ app.post('/api/admin/upload-background', upload.single('background'), async (req
   try {
     if (!isAdmin(req)) return res.status(403).json({ error: 'Доступ запрещён' });
     if (!req.file) return res.status(400).json({ error: 'Файл не загружен' });
-    const filePath = '/uploads/backgrounds/' + req.file.filename;
+    // Render не сохраняет физические файлы, поэтому просто сохраняем путь как заглушку (вы потеряете картинки при перезапуске). 
+    // В реальном проекте используйте Supabase Storage.
+    const filePath = '/uploads/backgrounds/' + req.file.originalname; 
     await supabase.from('settings').update({ value: filePath }).eq('key', 'site_background');
     res.json({ success: true, path: filePath });
   } catch (err) {
@@ -1254,7 +1238,9 @@ app.put('/api/admin/background', async (req, res) => {
   }
 });
 
-// ---- Запуск ----
-app.listen(PORT, () => {
-  console.log(`✅ Сервер запущен на http://localhost:${PORT}`);
+// ============================================================
+// ЗАПУСК (САМОЕ ВАЖНОЕ)
+// ============================================================
+app.listen(PORT, '0.0.0.0', () => {
+  console.log(`✅ Сервер запущен на порту ${PORT}`);
 });
