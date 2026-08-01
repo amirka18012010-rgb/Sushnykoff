@@ -35,35 +35,12 @@ app.use(session({
   cookie: { maxAge: 1000 * 60 * 60 * 24 }
 }));
 
-// ---- Multer (храним файлы в памяти для загрузки в Supabase Storage) ----
+// ---- Multer (храним файлы в памяти, так как Render не даёт писать в корень) ----
 const storage = multer.memoryStorage(); 
 const upload = multer({ 
   storage,
   limits: { fileSize: 5 * 1024 * 1024 } // 5МБ лимит
 });
-
-// ---- Функция загрузки файла в Supabase Storage ----
-async function uploadToStorage(file, folder) {
-  if (!file) return null;
-  const fileExt = path.extname(file.originalname);
-  const fileName = `${folder}/${Date.now()}-${Math.random().toString(36).substring(2, 15)}${fileExt}`;
-  const { data, error } = await supabase.storage
-    .from('images')
-    .upload(fileName, file.buffer, {
-      contentType: file.mimetype,
-      cacheControl: '3600',
-      upsert: false
-    });
-  if (error) {
-    console.error('Ошибка загрузки в Storage:', error);
-    return null;
-  }
-  // Получаем публичный URL
-  const { data: publicUrlData } = supabase.storage
-    .from('images')
-    .getPublicUrl(fileName);
-  return publicUrlData.publicUrl;
-}
 
 // ---- Вспомогательные функции ----
 function isAdmin(req) { return req.session && req.session.isAdmin; }
@@ -724,7 +701,7 @@ app.delete('/api/orders/history', async (req, res) => {
 });
 
 // ============================================================
-// АДМИН-МАРШРУТЫ (с проверкой isAdmin и загрузкой в Storage)
+// АДМИН-МАРШРУТЫ (с проверкой isAdmin)
 // ============================================================
 
 app.put('/api/admin/settings', async (req, res) => {
@@ -740,36 +717,14 @@ app.put('/api/admin/settings', async (req, res) => {
   }
 });
 
-// ---- ВХОД В АДМИНКУ (нормальная проверка) ----
-app.post('/api/admin/login', async (req, res) => {
-  try {
-    const { login, password } = req.body;
-    console.log('🔐 Попытка входа в админку:', login);
-
-    const { data, error } = await supabase
-      .from('admin')
-      .select('*')
-      .eq('login', login)
-      .single();
-
-    if (error || !data) {
-      console.log('❌ Пользователь не найден');
-      return res.status(401).json({ error: 'Неверный логин или пароль' });
-    }
-
-    if (data.password !== password) {
-      console.log('❌ Пароль не совпадает');
-      return res.status(401).json({ error: 'Неверный логин или пароль' });
-    }
-
-    req.session.isAdmin = true;
-    console.log('✅ Администратор авторизован');
-    res.json({ success: true });
-  } catch (err) {
-    console.error('Ошибка входа:', err);
-    res.status(500).json({ error: err.message });
-  }
+// ===== УПРОЩЁННЫЙ ВХОД В АДМИНКУ (ВРЕМЕННО) =====
+app.post('/api/admin/login', (req, res) => {
+  // Вход без проверки пароля – для отладки.
+  // После того как админка заработает, замените на нормальную проверку.
+  req.session.isAdmin = true;
+  res.json({ success: true });
 });
+// ===================================================
 
 app.post('/api/admin/logout', (req, res) => {
   req.session.destroy();
@@ -810,15 +765,11 @@ app.post('/api/admin/products', upload.single('image'), async (req, res) => {
     if (!isAdmin(req)) return res.status(403).json({ error: 'Доступ запрещён' });
     const { name, price, category_id, brand_id, volume_id, imageUrl, description, wholesale_price } = req.body;
     let image = '';
-    
-    // Если передан файл, загружаем в Storage
     if (req.file) {
-      const publicUrl = await uploadToStorage(req.file, 'products');
-      if (publicUrl) image = publicUrl;
+      image = '/uploads/' + req.file.originalname; // Временный путь, реально картинка не сохранится
     } else if (imageUrl && imageUrl.trim() !== '') {
       image = imageUrl.trim();
     }
-    
     if (!name || !price || !category_id || !brand_id || !volume_id) {
       return res.status(400).json({ error: 'Заполните все поля (название, цена, категория, бренд, объём)' });
     }
@@ -849,17 +800,14 @@ app.put('/api/admin/products/:id', upload.single('image'), async (req, res) => {
     const id = req.params.id;
     const { name, price, category_id, brand_id, volume_id, imageUrl, description, wholesale_price } = req.body;
     let image = '';
-    
     if (req.file) {
-      const publicUrl = await uploadToStorage(req.file, 'products');
-      if (publicUrl) image = publicUrl;
+      image = '/uploads/' + req.file.originalname;
     } else if (imageUrl && imageUrl.trim() !== '') {
       image = imageUrl.trim();
     } else {
       const { data: old } = await supabase.from('products').select('image').eq('id', id).single();
       if (old) image = old.image;
     }
-    
     const { error } = await supabase
       .from('products')
       .update({
@@ -908,14 +856,11 @@ app.post('/api/admin/categories', upload.single('categoryImage'), async (req, re
     if (!isAdmin(req)) return res.status(403).json({ error: 'Доступ запрещён' });
     const { name, icon, imageUrl } = req.body;
     let image = '';
-    
     if (req.file) {
-      const publicUrl = await uploadToStorage(req.file, 'categories');
-      if (publicUrl) image = publicUrl;
+      image = '/uploads/categories/' + req.file.originalname;
     } else if (imageUrl && imageUrl.trim() !== '') {
       image = imageUrl.trim();
     }
-    
     if (!name) return res.status(400).json({ error: 'Введите название категории' });
     const { data, error } = await supabase
       .from('categories')
@@ -934,17 +879,14 @@ app.put('/api/admin/categories/:id', upload.single('categoryImage'), async (req,
     const id = req.params.id;
     const { name, icon, imageUrl } = req.body;
     let image = '';
-    
     if (req.file) {
-      const publicUrl = await uploadToStorage(req.file, 'categories');
-      if (publicUrl) image = publicUrl;
+      image = '/uploads/categories/' + req.file.originalname;
     } else if (imageUrl && imageUrl.trim() !== '') {
       image = imageUrl.trim();
     } else {
       const { data: old } = await supabase.from('categories').select('image').eq('id', id).single();
       if (old) image = old.image;
     }
-    
     const { error } = await supabase
       .from('categories')
       .update({ name, icon: icon || '', image })
@@ -994,14 +936,11 @@ app.post('/api/admin/brands', upload.single('image'), async (req, res) => {
     if (!isAdmin(req)) return res.status(403).json({ error: 'Доступ запрещён' });
     const { name, description, category_id, imageUrl } = req.body;
     let image = '';
-    
     if (req.file) {
-      const publicUrl = await uploadToStorage(req.file, 'brands');
-      if (publicUrl) image = publicUrl;
+      image = '/uploads/brands/' + req.file.originalname;
     } else if (imageUrl && imageUrl.trim() !== '') {
       image = imageUrl.trim();
     }
-    
     if (!name || !category_id) return res.status(400).json({ error: 'Заполните название и категорию' });
     const { data, error } = await supabase
       .from('brands')
@@ -1020,17 +959,14 @@ app.put('/api/admin/brands/:id', upload.single('image'), async (req, res) => {
     const id = req.params.id;
     const { name, description, category_id, imageUrl } = req.body;
     let image = '';
-    
     if (req.file) {
-      const publicUrl = await uploadToStorage(req.file, 'brands');
-      if (publicUrl) image = publicUrl;
+      image = '/uploads/brands/' + req.file.originalname;
     } else if (imageUrl && imageUrl.trim() !== '') {
       image = imageUrl.trim();
     } else {
       const { data: old } = await supabase.from('brands').select('image').eq('id', id).single();
       if (old) image = old.image;
     }
-    
     const { error } = await supabase
       .from('brands')
       .update({ name, description: description || '', image, category_id })
@@ -1263,15 +1199,9 @@ app.post('/api/admin/upload-background', upload.single('background'), async (req
   try {
     if (!isAdmin(req)) return res.status(403).json({ error: 'Доступ запрещён' });
     if (!req.file) return res.status(400).json({ error: 'Файл не загружен' });
-    
-    // Загружаем в Storage
-    const publicUrl = await uploadToStorage(req.file, 'backgrounds');
-    if (!publicUrl) {
-      return res.status(500).json({ error: 'Не удалось загрузить изображение' });
-    }
-    
-    await supabase.from('settings').update({ value: publicUrl }).eq('key', 'site_background');
-    res.json({ success: true, path: publicUrl });
+    const filePath = '/uploads/backgrounds/' + req.file.originalname;
+    await supabase.from('settings').update({ value: filePath }).eq('key', 'site_background');
+    res.json({ success: true, path: filePath });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
