@@ -6,172 +6,24 @@ const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
 const bcrypt = require('bcrypt');
-const Database = require('better-sqlite3');
-const http = require('http');
-const { Server } = require('socket.io');
-const sharp = require('sharp');
-
-// ---- Создаём папки ----
-['./uploads', './uploads/backgrounds', './uploads/brands', './uploads/categories', './db'].forEach(dir => {
-  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-});
+const { createClient } = require('@supabase/supabase-js');
 
 const app = express();
-const server = http.createServer(app);
-const io = new Server(server, {
-  cors: {
-    origin: '*',
-    methods: ['GET', 'POST']
-  }
-});
 const PORT = process.env.PORT || 3000;
 
-// ---- Подключение к БД ----
-const db = new Database('./db/database.sqlite');
-db.pragma('foreign_keys = ON');
-
-// ---- Создание таблиц (все данные сохраняются) ----
-db.exec(`
-  CREATE TABLE IF NOT EXISTS categories (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    name TEXT NOT NULL UNIQUE,
-    icon TEXT,
-    image TEXT
-  );
-  CREATE TABLE IF NOT EXISTS brands (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    name TEXT NOT NULL,
-    description TEXT,
-    image TEXT,
-    category_id INTEGER NOT NULL,
-    FOREIGN KEY (category_id) REFERENCES categories(id)
-  );
-  CREATE TABLE IF NOT EXISTS volumes (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    name TEXT NOT NULL UNIQUE,
-    sort_order INTEGER DEFAULT 0
-  );
-  CREATE TABLE IF NOT EXISTS products (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    name TEXT NOT NULL,
-    price REAL NOT NULL,
-    category_id INTEGER NOT NULL,
-    brand_id INTEGER NOT NULL,
-    volume_id INTEGER NOT NULL,
-    image TEXT,
-    description TEXT,
-    avg_rating REAL DEFAULT 0,
-    wholesale_price REAL
-  );
-  CREATE TABLE IF NOT EXISTS users (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    first_name TEXT NOT NULL,
-    last_name TEXT NOT NULL,
-    login TEXT NOT NULL UNIQUE,
-    password TEXT NOT NULL,
-    is_blocked INTEGER DEFAULT 0,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-  );
-  CREATE TABLE IF NOT EXISTS cart_items (
-    user_id INTEGER NOT NULL,
-    product_id INTEGER NOT NULL,
-    quantity INTEGER NOT NULL,
-    price_type TEXT DEFAULT 'retail',
-    price REAL,
-    PRIMARY KEY (user_id, product_id, price_type),
-    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
-    FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE CASCADE
-  );
-  CREATE TABLE IF NOT EXISTS orders (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    user_id INTEGER NOT NULL,
-    items TEXT NOT NULL,
-    total REAL NOT NULL,
-    status TEXT DEFAULT 'pending',
-    payment_id TEXT,
-    is_deleted INTEGER DEFAULT 0,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (user_id) REFERENCES users(id)
-  );
-  CREATE TABLE IF NOT EXISTS reviews (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    product_id INTEGER NOT NULL,
-    user_name TEXT NOT NULL,
-    rating INTEGER NOT NULL CHECK(rating >= 1 AND rating <= 5),
-    comment TEXT,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE CASCADE
-  );
-  CREATE TABLE IF NOT EXISTS favorites (
-    user_id INTEGER NOT NULL,
-    product_id INTEGER NOT NULL,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    PRIMARY KEY (user_id, product_id),
-    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
-    FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE CASCADE
-  );
-  CREATE TABLE IF NOT EXISTS news (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    title TEXT NOT NULL,
-    content TEXT NOT NULL,
-    is_active INTEGER DEFAULT 1,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-  );
-  CREATE TABLE IF NOT EXISTS settings (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    key TEXT NOT NULL UNIQUE,
-    value TEXT
-  );
-  CREATE TABLE IF NOT EXISTS notifications (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    message TEXT NOT NULL,
-    is_read INTEGER DEFAULT 0,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-  );
-  CREATE TABLE IF NOT EXISTS admin (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    login TEXT NOT NULL UNIQUE,
-    password TEXT NOT NULL
-  );
-`);
-
-// ---- Добавляем индексы для ускорения запросов ----
-db.exec(`
-  CREATE INDEX IF NOT EXISTS idx_products_category ON products(category_id);
-  CREATE INDEX IF NOT EXISTS idx_products_brand ON products(brand_id);
-  CREATE INDEX IF NOT EXISTS idx_products_volume ON products(volume_id);
-  CREATE INDEX IF NOT EXISTS idx_products_name ON products(name);
-  CREATE INDEX IF NOT EXISTS idx_orders_user_id ON orders(user_id);
-  CREATE INDEX IF NOT EXISTS idx_cart_items_user_id ON cart_items(user_id);
-  CREATE INDEX IF NOT EXISTS idx_favorites_user_id ON favorites(user_id);
-`);
-
-// ---- Проверяем наличие колонки wholesale_price ----
-const tableInfo = db.prepare("PRAGMA table_info(products)").all();
-const hasWholesale = tableInfo.some(col => col.name === 'wholesale_price');
-if (!hasWholesale) {
-  db.exec("ALTER TABLE products ADD COLUMN wholesale_price REAL");
-  console.log('✅ Добавлена колонка wholesale_price в таблицу products');
+// ---- Подключение к Supabase ----
+const supabaseUrl = process.env.SUPABASE_URL;
+const supabaseKey = process.env.SUPABASE_ANON_KEY;
+if (!supabaseUrl || !supabaseKey) {
+  console.error('❌ Отсутствуют SUPABASE_URL или SUPABASE_ANON_KEY в переменных окружения');
+  process.exit(1);
 }
+const supabase = createClient(supabaseUrl, supabaseKey);
 
-// ---- Начальные настройки ----
-const defaultSettings = {
-  about_text: 'Мы — команда энтузиастов, которые любят вкусные напитки.',
-  contacts_address: 'г. Нальчик, Рынок Дубки 2/172',
-  contacts_phone: '+7 (988) 936-97-30',
-  contacts_email: 'kugotovaina@yandex.ru',
-  contacts_schedule: 'Пн-Вс 8:00 – 17:00',
-  site_background: ''
-};
-const stmt = db.prepare('INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)');
-Object.entries(defaultSettings).forEach(([key, val]) => stmt.run(key, val));
-
-// ---- Админ ----
-const adminLogin = process.env.ADMIN_LOGIN || 'admin';
-const adminPass = process.env.ADMIN_PASSWORD || 'admin123';
-const adminStmt = db.prepare('INSERT OR IGNORE INTO admin (login, password) VALUES (?, ?)');
-adminStmt.run(adminLogin, adminPass);
-console.log('✅ База данных инициализирована (better-sqlite3)');
+// ---- Создаём папки для загрузок (если ещё нет) ----
+['./uploads', './uploads/backgrounds', './uploads/brands', './uploads/categories'].forEach(dir => {
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+});
 
 // ---- Middleware ----
 app.use(cors());
@@ -179,6 +31,8 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(express.static('public'));
 app.use('/uploads', express.static('uploads'));
+
+// ---- Сессии ----
 app.use(session({
   secret: process.env.SESSION_SECRET || 'default_secret',
   resave: false,
@@ -186,7 +40,7 @@ app.use(session({
   cookie: { maxAge: 1000 * 60 * 60 * 24 }
 }));
 
-// ---- Multer с функцией сжатия изображений через Sharp ----
+// ---- Multer (для загрузки файлов) ----
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
     let uploadDir = './uploads';
@@ -198,290 +52,305 @@ const storage = multer.diskStorage({
   },
   filename: (req, file, cb) => {
     const unique = Date.now() + '-' + Math.round(Math.random() * 1E9);
-    cb(null, unique + '.webp'); // Всегда сохраняем в WebP
+    cb(null, unique + path.extname(file.originalname));
   }
 });
-
-const upload = multer({
-  storage,
-  limits: { fileSize: 5 * 1024 * 1024 }, // 5MB лимит
-  fileFilter: (req, file, cb) => {
-    const allowed = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp', 'image/gif'];
-    if (allowed.includes(file.mimetype)) {
-      cb(null, true);
-    } else {
-      cb(new Error('Неподдерживаемый формат изображения'), false);
-    }
-  }
-});
-
-// ---- Функция сжатия изображения ----
-async function compressImage(filePath, outputPath) {
-  try {
-    await sharp(filePath)
-      .resize(800, 800, { fit: 'inside', withoutEnlargement: true })
-      .webp({ quality: 70 })
-      .toFile(outputPath);
-    // Удаляем оригинал
-    fs.unlinkSync(filePath);
-    return true;
-  } catch (err) {
-    console.error('Ошибка сжатия:', err);
-    return false;
-  }
-}
-
-// ---- Обработчик загрузки с автоматическим сжатием ----
-const uploadWithCompression = async (req, res, next) => {
-  upload.single('image')(req, res, async (err) => {
-    if (err) {
-      return res.status(400).json({ error: err.message });
-    }
-    if (req.file) {
-      const outputPath = req.file.path; // уже .webp
-      try {
-        await sharp(req.file.path)
-          .resize(800, 800, { fit: 'inside', withoutEnlargement: true })
-          .webp({ quality: 70 })
-          .toFile(req.file.path + '.tmp');
-        fs.renameSync(req.file.path + '.tmp', req.file.path);
-        req.file.filename = req.file.filename; // уже .webp
-        req.file.path = req.file.path;
-      } catch (err) {
-        console.error('Ошибка сжатия:', err);
-      }
-    }
-    next();
-  });
-};
+const upload = multer({ storage });
 
 // ---- Вспомогательные функции ----
 function isAdmin(req) { return req.session && req.session.isAdmin; }
 function isAuthenticated(req) { return req.session && req.session.userId; }
-function isBlocked(userId) {
-  const row = db.prepare('SELECT is_blocked FROM users WHERE id = ?').get(userId);
-  return row ? row.is_blocked : 0;
+async function isBlocked(userId) {
+  const { data, error } = await supabase
+    .from('users')
+    .select('is_blocked')
+    .eq('id', userId)
+    .single();
+  if (error || !data) return 0;
+  return data.is_blocked;
 }
 
-// ---- Функции для работы с корзиной в БД ----
-function getCartFromDB(userId) {
-  const rows = db.prepare(`
-    SELECT product_id, quantity, price_type, price
-    FROM cart_items
-    WHERE user_id = ?
-  `).all(userId);
-  return rows.map(row => ({
+// ---- Функции для корзины ----
+async function getCartFromDB(userId) {
+  const { data, error } = await supabase
+    .from('cart_items')
+    .select('product_id, quantity, price_type, price')
+    .eq('user_id', userId);
+  if (error) return [];
+  return data.map(row => ({
     productId: row.product_id,
     quantity: row.quantity,
     priceType: row.price_type,
-    price: row.price
+    price: row.price,
   }));
 }
 
-function setCartToDB(userId, cart) {
-  db.prepare('DELETE FROM cart_items WHERE user_id = ?').run(userId);
-  const insert = db.prepare(`
-    INSERT INTO cart_items (user_id, product_id, quantity, price_type, price)
-    VALUES (?, ?, ?, ?, ?)
-  `);
-  cart.forEach(item => {
-    insert.run(userId, item.productId, item.quantity, item.priceType, item.price);
-  });
+async function setCartToDB(userId, cart) {
+  await supabase.from('cart_items').delete().eq('user_id', userId);
+  if (cart.length === 0) return;
+  const items = cart.map(item => ({
+    user_id: userId,
+    product_id: item.productId,
+    quantity: item.quantity,
+    price_type: item.priceType,
+    price: item.price,
+  }));
+  await supabase.from('cart_items').insert(items);
 }
 
 // ============================================================
-// МАРШРУТЫ
+// МАРШРУТЫ ДЛЯ ПУБЛИЧНОЙ ЧАСТИ
 // ============================================================
 
+// ---- Пинг (чтобы сервер не засыпал) ----
+app.get('/api/ping', (req, res) => {
+  res.send('ok');
+});
+
 // ---- 1. Категории ----
-app.get('/api/categories', (req, res) => {
+app.get('/api/categories', async (req, res) => {
   try {
-    const rows = db.prepare('SELECT * FROM categories ORDER BY name').all();
-    res.json(rows);
+    const { data, error } = await supabase
+      .from('categories')
+      .select('*')
+      .order('name');
+    if (error) throw error;
+    res.json(data);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
 // ---- 2. Бренды по категории ----
-app.get('/api/brands', (req, res) => {
+app.get('/api/brands', async (req, res) => {
   try {
     const { categoryId } = req.query;
-    let sql = 'SELECT * FROM brands';
-    const params = [];
-    if (categoryId) {
-      sql += ' WHERE category_id = ?';
-      params.push(categoryId);
-    }
-    sql += ' ORDER BY name';
-    const rows = db.prepare(sql).all(...params);
-    res.json(rows);
+    let query = supabase.from('brands').select('*');
+    if (categoryId) query = query.eq('category_id', categoryId);
+    const { data, error } = await query.order('name');
+    if (error) throw error;
+    res.json(data);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
 // ---- 3. Бренд по ID ----
-app.get('/api/brands/:id', (req, res) => {
+app.get('/api/brands/:id', async (req, res) => {
   try {
-    const row = db.prepare('SELECT * FROM brands WHERE id = ?').get(req.params.id);
-    if (!row) return res.status(404).json({ error: 'Бренд не найден' });
-    res.json(row);
+    const { data, error } = await supabase
+      .from('brands')
+      .select('*')
+      .eq('id', req.params.id)
+      .single();
+    if (error) return res.status(404).json({ error: 'Бренд не найден' });
+    res.json(data);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
 // ---- 4. Объёмы для бренда ----
-app.get('/api/volumes', (req, res) => {
+app.get('/api/volumes', async (req, res) => {
   try {
     const { brandId } = req.query;
     if (!brandId) return res.json([]);
-    const rows = db.prepare(`
-      SELECT DISTINCT v.*
-      FROM volumes v
-      JOIN products p ON p.volume_id = v.id
-      WHERE p.brand_id = ?
-      ORDER BY v.sort_order, v.name
-    `).all(brandId);
-    res.json(rows);
+    // Получаем все volume_id, которые есть у продуктов бренда
+    const { data, error } = await supabase
+      .from('products')
+      .select('volume_id')
+      .eq('brand_id', brandId);
+    if (error) throw error;
+    const volumeIds = data.map(p => p.volume_id).filter(id => id !== null);
+    if (!volumeIds.length) return res.json([]);
+    // Получаем информацию об объёмах
+    const { data: volumes, error: err2 } = await supabase
+      .from('volumes')
+      .select('*')
+      .in('id', volumeIds)
+      .order('sort_order', { ascending: true });
+    if (err2) throw err2;
+    res.json(volumes);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
 // ---- 5. Товары (фильтр, поиск, пагинация, сортировка) ----
-app.get('/api/products', (req, res) => {
+app.get('/api/products', async (req, res) => {
   try {
     const { brandId, volumeId, category, search, page = 1, limit = 12, sort = 'newest', ids } = req.query;
-    let sql = `
-      SELECT p.*, c.name as category_name, b.name as brand_name, v.name as volume_name
-      FROM products p
-      JOIN categories c ON p.category_id = c.id
-      JOIN brands b ON p.brand_id = b.id
-      JOIN volumes v ON p.volume_id = v.id
-    `;
-    const params = [];
-    const conditions = [];
+    let query = supabase
+      .from('products')
+      .select(`
+        *,
+        categories:category_id(name),
+        brands:brand_id(name),
+        volumes:volume_id(name)
+      `);
 
-    if (brandId) {
-      conditions.push('p.brand_id = ?');
-      params.push(brandId);
-    }
-    if (volumeId) {
-      conditions.push('p.volume_id = ?');
-      params.push(volumeId);
-    }
-    if (category && category !== 'all') {
-      conditions.push('p.category_id = ?');
-      params.push(category);
-    }
+    if (brandId) query = query.eq('brand_id', brandId);
+    if (volumeId) query = query.eq('volume_id', volumeId);
+    if (category && category !== 'all') query = query.eq('category_id', category);
     if (search && search.trim() !== '') {
       const words = search.trim().split(/\s+/).filter(w => w.length > 0);
-      words.forEach(word => {
-        conditions.push('(p.name LIKE ? COLLATE NOCASE OR p.description LIKE ? COLLATE NOCASE)');
-        params.push('%' + word + '%', '%' + word + '%');
-      });
+      const conditions = words.map(word => 
+        `name.ilike.%${word}%,description.ilike.%${word}%`
+      ).join(',');
+      query = query.or(conditions);
     }
     if (ids) {
       const idArray = ids.split(',').map(Number).filter(id => !isNaN(id));
-      if (idArray.length) {
-        conditions.push(`p.id IN (${idArray.map(() => '?').join(',')})`);
-        params.push(...idArray);
-      }
+      if (idArray.length) query = query.in('id', idArray);
     }
 
-    if (conditions.length) sql += ' WHERE ' + conditions.join(' AND ');
-
-    const countStmt = db.prepare('SELECT COUNT(*) as total FROM products p' + (conditions.length ? ' WHERE ' + conditions.join(' AND ') : ''));
-    const totalRow = countStmt.get(...params);
-    const total = totalRow.total;
-    const offset = (page - 1) * limit;
-
+    // Сортировка (в Supabase нет RANDOM() в free плане, поэтому используем id DESC)
     if (sort === 'random') {
-      sql += ' ORDER BY RANDOM()';
+      query = query.order('id', { ascending: false });
     } else {
-      sql += ' ORDER BY p.id DESC';
+      query = query.order('id', { ascending: false });
     }
-    sql += ' LIMIT ? OFFSET ?';
-    const dataStmt = db.prepare(sql);
-    const rows = dataStmt.all(...params, limit, offset);
-    res.json({ items: rows, total, page: parseInt(page), totalPages: Math.ceil(total / limit) });
+
+    // Пагинация
+    const from = (page - 1) * limit;
+    const to = from + limit - 1;
+    query = query.range(from, to);
+
+    const { data, error } = await query;
+    if (error) throw error;
+
+    const items = data.map(p => ({
+      ...p,
+      category_name: p.categories?.name,
+      brand_name: p.brands?.name,
+      volume_name: p.volumes?.name,
+    }));
+
+    // Общее количество (для пагинации)
+    let countQuery = supabase.from('products').select('*', { count: 'exact', head: true });
+    if (brandId) countQuery = countQuery.eq('brand_id', brandId);
+    if (volumeId) countQuery = countQuery.eq('volume_id', volumeId);
+    if (category && category !== 'all') countQuery = countQuery.eq('category_id', category);
+    // Поиск для подсчёта (упрощённо)
+    if (search && search.trim() !== '') {
+      const words = search.trim().split(/\s+/).filter(w => w.length > 0);
+      const conditions = words.map(word => 
+        `name.ilike.%${word}%,description.ilike.%${word}%`
+      ).join(',');
+      countQuery = countQuery.or(conditions);
+    }
+    const { count, error: countErr } = await countQuery;
+    if (countErr) throw countErr;
+
+    res.json({
+      items,
+      total: count || 0,
+      page: parseInt(page),
+      totalPages: Math.ceil((count || 0) / limit),
+    });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
 // ---- 6. Товар по ID ----
-app.get('/api/products/:id', (req, res) => {
+app.get('/api/products/:id', async (req, res) => {
   try {
-    const row = db.prepare(`
-      SELECT p.*, c.name as category_name, b.name as brand_name, v.name as volume_name
-      FROM products p
-      JOIN categories c ON p.category_id = c.id
-      JOIN brands b ON p.brand_id = b.id
-      JOIN volumes v ON p.volume_id = v.id
-      WHERE p.id = ?
-    `).get(req.params.id);
-    if (!row) return res.status(404).json({ error: 'Товар не найден' });
-    res.json(row);
+    const { data, error } = await supabase
+      .from('products')
+      .select(`
+        *,
+        categories:category_id(name),
+        brands:brand_id(name),
+        volumes:volume_id(name)
+      `)
+      .eq('id', req.params.id)
+      .single();
+    if (error) return res.status(404).json({ error: 'Товар не найден' });
+    data.category_name = data.categories?.name;
+    data.brand_name = data.brands?.name;
+    data.volume_name = data.volumes?.name;
+    res.json(data);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
 // ---- 7. Отзывы ----
-app.get('/api/products/:id/reviews', (req, res) => {
+app.get('/api/products/:id/reviews', async (req, res) => {
   try {
-    const rows = db.prepare('SELECT * FROM reviews WHERE product_id = ? ORDER BY created_at DESC').all(req.params.id);
-    res.json(rows);
+    const { data, error } = await supabase
+      .from('reviews')
+      .select('*')
+      .eq('product_id', req.params.id)
+      .order('created_at', { ascending: false });
+    if (error) throw error;
+    res.json(data);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
-app.post('/api/products/:id/reviews', (req, res) => {
+app.post('/api/products/:id/reviews', async (req, res) => {
   try {
     const { user_name, rating, comment } = req.body;
     if (!user_name || !rating || rating < 1 || rating > 5) {
       return res.status(400).json({ error: 'Заполните имя и рейтинг' });
     }
-    const info = db.prepare('INSERT INTO reviews (product_id, user_name, rating, comment) VALUES (?, ?, ?, ?)')
-      .run(req.params.id, user_name, rating, comment || '');
-    const avgRow = db.prepare('SELECT AVG(rating) as avg FROM reviews WHERE product_id = ?').get(req.params.id);
-    if (avgRow && avgRow.avg !== null) {
-      db.prepare('UPDATE products SET avg_rating = ? WHERE id = ?').run(avgRow.avg, req.params.id);
+    const { data, error } = await supabase
+      .from('reviews')
+      .insert({ product_id: req.params.id, user_name, rating, comment: comment || '' })
+      .select();
+    if (error) throw error;
+    // Обновляем средний рейтинг
+    const { data: avgData } = await supabase
+      .from('reviews')
+      .select('rating')
+      .eq('product_id', req.params.id);
+    if (avgData && avgData.length) {
+      const avg = avgData.reduce((sum, r) => sum + r.rating, 0) / avgData.length;
+      await supabase.from('products').update({ avg_rating: avg }).eq('id', req.params.id);
     }
-    res.json({ id: info.lastInsertRowid });
+    res.json({ id: data[0].id });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
 // ---- 8. Избранное ----
-app.get('/api/favorites', (req, res) => {
+app.get('/api/favorites', async (req, res) => {
   if (!isAuthenticated(req)) return res.status(401).json({ error: 'Необходимо войти' });
   try {
-    const rows = db.prepare('SELECT product_id FROM favorites WHERE user_id = ?').all(req.session.userId);
-    res.json(rows.map(r => r.product_id));
+    const { data, error } = await supabase
+      .from('favorites')
+      .select('product_id')
+      .eq('user_id', req.session.userId);
+    if (error) throw error;
+    res.json(data.map(r => r.product_id));
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
-app.post('/api/favorites', (req, res) => {
+app.post('/api/favorites', async (req, res) => {
   if (!isAuthenticated(req)) return res.status(401).json({ error: 'Необходимо войти' });
   const { productId } = req.body;
   if (!productId) return res.status(400).json({ error: 'Не указан товар' });
   try {
-    db.prepare('INSERT OR IGNORE INTO favorites (user_id, product_id) VALUES (?, ?)').run(req.session.userId, productId);
+    await supabase
+      .from('favorites')
+      .insert({ user_id: req.session.userId, product_id: productId });
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
-app.delete('/api/favorites/:productId', (req, res) => {
+app.delete('/api/favorites/:productId', async (req, res) => {
   if (!isAuthenticated(req)) return res.status(401).json({ error: 'Необходимо войти' });
   try {
-    db.prepare('DELETE FROM favorites WHERE user_id = ? AND product_id = ?').run(req.session.userId, req.params.productId);
+    await supabase
+      .from('favorites')
+      .delete()
+      .eq('user_id', req.session.userId)
+      .eq('product_id', req.params.productId);
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -489,21 +358,28 @@ app.delete('/api/favorites/:productId', (req, res) => {
 });
 
 // ---- 9. Новости ----
-app.get('/api/news/latest', (req, res) => {
+app.get('/api/news/latest', async (req, res) => {
   try {
-    const rows = db.prepare('SELECT * FROM news WHERE is_active = 1 ORDER BY created_at DESC LIMIT 3').all();
-    res.json(rows);
+    const { data, error } = await supabase
+      .from('news')
+      .select('*')
+      .eq('is_active', true)
+      .order('created_at', { ascending: false })
+      .limit(3);
+    if (error) throw error;
+    res.json(data);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
 // ---- 10. Настройки ----
-app.get('/api/settings', (req, res) => {
+app.get('/api/settings', async (req, res) => {
   try {
-    const rows = db.prepare('SELECT key, value FROM settings').all();
+    const { data, error } = await supabase.from('settings').select('key, value');
+    if (error) throw error;
     const settings = {};
-    rows.forEach(row => settings[row.key] = row.value);
+    data.forEach(row => settings[row.key] = row.value);
     res.json(settings);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -511,17 +387,22 @@ app.get('/api/settings', (req, res) => {
 });
 
 // ---- 11. Уведомления ----
-app.get('/api/notifications', (req, res) => {
+app.get('/api/notifications', async (req, res) => {
   try {
-    const rows = db.prepare('SELECT * FROM notifications WHERE is_read = 0 ORDER BY created_at DESC').all();
-    res.json(rows);
+    const { data, error } = await supabase
+      .from('notifications')
+      .select('*')
+      .eq('is_read', false)
+      .order('created_at', { ascending: false });
+    if (error) throw error;
+    res.json(data);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
-app.post('/api/notifications/read', (req, res) => {
+app.post('/api/notifications/read', async (req, res) => {
   try {
-    db.prepare('UPDATE notifications SET is_read = 1').run();
+    await supabase.from('notifications').update({ is_read: true }).eq('is_read', false);
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -529,10 +410,15 @@ app.post('/api/notifications/read', (req, res) => {
 });
 
 // ---- 12. Фон ----
-app.get('/api/background', (req, res) => {
+app.get('/api/background', async (req, res) => {
   try {
-    const row = db.prepare('SELECT value FROM settings WHERE key = ?').get('site_background');
-    res.json({ background: row ? row.value : '' });
+    const { data, error } = await supabase
+      .from('settings')
+      .select('value')
+      .eq('key', 'site_background')
+      .single();
+    if (error) return res.json({ background: '' });
+    res.json({ background: data.value || '' });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -545,13 +431,20 @@ app.post('/api/auth/register', async (req, res) => {
     if (!firstName || !lastName || !login || !password) {
       return res.status(400).json({ error: 'Заполните все поля' });
     }
-    const check = db.prepare('SELECT id FROM users WHERE login = ?').get(login);
-    if (check) return res.status(400).json({ error: 'Логин уже занят' });
+    const { data: existing } = await supabase
+      .from('users')
+      .select('id')
+      .eq('login', login)
+      .single();
+    if (existing) return res.status(400).json({ error: 'Логин уже занят' });
     const hashed = await bcrypt.hash(password, 10);
-    const info = db.prepare('INSERT INTO users (first_name, last_name, login, password) VALUES (?, ?, ?, ?)')
-      .run(firstName, lastName, login, hashed);
-    req.session.userId = info.lastInsertRowid;
-    res.json({ success: true, userId: info.lastInsertRowid });
+    const { data, error } = await supabase
+      .from('users')
+      .insert({ first_name: firstName, last_name: lastName, login, password: hashed })
+      .select('id');
+    if (error) throw error;
+    req.session.userId = data[0].id;
+    res.json({ success: true, userId: data[0].id });
   } catch (err) {
     res.status(500).json({ error: 'Ошибка регистрации' });
   }
@@ -560,8 +453,12 @@ app.post('/api/auth/login', async (req, res) => {
   try {
     const { login, password } = req.body;
     if (!login || !password) return res.status(400).json({ error: 'Введите логин и пароль' });
-    const user = db.prepare('SELECT * FROM users WHERE login = ?').get(login);
-    if (!user) return res.status(401).json({ error: 'Неверный логин или пароль' });
+    const { data: user, error } = await supabase
+      .from('users')
+      .select('*')
+      .eq('login', login)
+      .single();
+    if (error || !user) return res.status(401).json({ error: 'Неверный логин или пароль' });
     if (user.is_blocked) return res.status(403).json({ error: 'Ваш аккаунт заблокирован' });
     const match = await bcrypt.compare(password, user.password);
     if (!match) return res.status(401).json({ error: 'Неверный логин или пароль' });
@@ -571,12 +468,19 @@ app.post('/api/auth/login', async (req, res) => {
     res.status(500).json({ error: 'Ошибка входа' });
   }
 });
-app.get('/api/auth/me', (req, res) => {
+app.get('/api/auth/me', async (req, res) => {
   try {
     if (!isAuthenticated(req)) return res.json({ user: null });
-    const user = db.prepare('SELECT id, first_name, last_name, login FROM users WHERE id = ?').get(req.session.userId);
-    if (!user) { req.session.destroy(); return res.json({ user: null }); }
-    res.json({ user });
+    const { data, error } = await supabase
+      .from('users')
+      .select('id, first_name, last_name, login')
+      .eq('id', req.session.userId)
+      .single();
+    if (error || !data) {
+      req.session.destroy();
+      return res.json({ user: null });
+    }
+    res.json({ user: data });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -585,13 +489,18 @@ app.post('/api/auth/logout', (req, res) => {
   req.session.destroy();
   res.json({ success: true });
 });
-app.post('/api/auth/recover-login', (req, res) => {
+app.post('/api/auth/recover-login', async (req, res) => {
   try {
     const { firstName, lastName } = req.body;
     if (!firstName || !lastName) return res.status(400).json({ error: 'Введите имя и фамилию' });
-    const row = db.prepare('SELECT login FROM users WHERE first_name = ? AND last_name = ?').get(firstName, lastName);
-    if (!row) return res.status(404).json({ error: 'Пользователь не найден' });
-    res.json({ login: row.login });
+    const { data, error } = await supabase
+      .from('users')
+      .select('login')
+      .eq('first_name', firstName)
+      .eq('last_name', lastName)
+      .single();
+    if (error || !data) return res.status(404).json({ error: 'Пользователь не найден' });
+    res.json({ login: data.login });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -600,21 +509,27 @@ app.post('/api/auth/reset-password', async (req, res) => {
   try {
     const { firstName, lastName, login, newPassword } = req.body;
     if (!firstName || !lastName || !login || !newPassword) return res.status(400).json({ error: 'Заполните все поля' });
-    const user = db.prepare('SELECT id FROM users WHERE first_name = ? AND last_name = ? AND login = ?').get(firstName, lastName, login);
-    if (!user) return res.status(404).json({ error: 'Пользователь не найден' });
+    const { data, error } = await supabase
+      .from('users')
+      .select('id')
+      .eq('first_name', firstName)
+      .eq('last_name', lastName)
+      .eq('login', login)
+      .single();
+    if (error || !data) return res.status(404).json({ error: 'Пользователь не найден' });
     const hashed = await bcrypt.hash(newPassword, 10);
-    db.prepare('UPDATE users SET password = ? WHERE id = ?').run(hashed, user.id);
+    await supabase.from('users').update({ password: hashed }).eq('id', data.id);
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-// ---- 14. Корзина (с БД) ----
-app.get('/api/cart', (req, res) => {
+// ---- 14. Корзина ----
+app.get('/api/cart', async (req, res) => {
   try {
     if (isAuthenticated(req)) {
-      const cart = getCartFromDB(req.session.userId);
+      const cart = await getCartFromDB(req.session.userId);
       res.json(cart);
     } else {
       res.json(req.session.cart || []);
@@ -624,14 +539,18 @@ app.get('/api/cart', (req, res) => {
   }
 });
 
-app.post('/api/cart', (req, res) => {
+app.post('/api/cart', async (req, res) => {
   try {
     const { productId, quantity, priceType = 'retail' } = req.body;
     if (!productId || quantity === undefined) {
       return res.status(400).json({ error: 'Не указан товар или количество' });
     }
-    const product = db.prepare('SELECT * FROM products WHERE id = ?').get(productId);
-    if (!product) return res.status(404).json({ error: 'Товар не найден' });
+    const { data: product, error } = await supabase
+      .from('products')
+      .select('*')
+      .eq('id', productId)
+      .single();
+    if (error || !product) return res.status(404).json({ error: 'Товар не найден' });
 
     let price = product.price;
     if (priceType === 'wholesale' && product.wholesale_price !== null && product.wholesale_price > 0) {
@@ -639,7 +558,7 @@ app.post('/api/cart', (req, res) => {
     }
 
     if (isAuthenticated(req)) {
-      let cart = getCartFromDB(req.session.userId);
+      let cart = await getCartFromDB(req.session.userId);
       const existingIndex = cart.findIndex(item => item.productId === productId && item.priceType === priceType);
       if (existingIndex !== -1) {
         if (quantity > 0) {
@@ -651,7 +570,7 @@ app.post('/api/cart', (req, res) => {
       } else if (quantity > 0) {
         cart.push({ productId, quantity, priceType, price });
       }
-      setCartToDB(req.session.userId, cart);
+      await setCartToDB(req.session.userId, cart);
       res.json(cart);
     } else {
       let cart = req.session.cart || [];
@@ -674,14 +593,14 @@ app.post('/api/cart', (req, res) => {
   }
 });
 
-app.delete('/api/cart/:productId', (req, res) => {
+app.delete('/api/cart/:productId', async (req, res) => {
   try {
     const productId = parseInt(req.params.productId);
     const priceType = req.query.priceType || 'retail';
     if (isAuthenticated(req)) {
-      let cart = getCartFromDB(req.session.userId);
+      let cart = await getCartFromDB(req.session.userId);
       cart = cart.filter(item => !(item.productId === productId && item.priceType === priceType));
-      setCartToDB(req.session.userId, cart);
+      await setCartToDB(req.session.userId, cart);
       res.json(cart);
     } else {
       let cart = req.session.cart || [];
@@ -694,15 +613,15 @@ app.delete('/api/cart/:productId', (req, res) => {
   }
 });
 
-app.post('/api/cart/sync', (req, res) => {
+app.post('/api/cart/sync', async (req, res) => {
   try {
     if (!isAuthenticated(req)) return res.status(401).json({ error: 'Необходимо войти' });
     const sessionCart = req.session.cart || [];
     if (sessionCart.length > 0) {
-      setCartToDB(req.session.userId, sessionCart);
+      await setCartToDB(req.session.userId, sessionCart);
       req.session.cart = [];
     }
-    const dbCart = getCartFromDB(req.session.userId);
+    const dbCart = await getCartFromDB(req.session.userId);
     res.json(dbCart);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -710,45 +629,62 @@ app.post('/api/cart/sync', (req, res) => {
 });
 
 // ---- 15. Заказы ----
-app.post('/api/orders', (req, res) => {
+app.post('/api/orders', async (req, res) => {
   try {
     if (!isAuthenticated(req)) return res.status(401).json({ error: 'Необходимо войти' });
-    if (isBlocked(req.session.userId)) return res.status(403).json({ error: 'Ваш аккаунт заблокирован' });
+    if (await isBlocked(req.session.userId)) return res.status(403).json({ error: 'Ваш аккаунт заблокирован' });
 
-    let cart = getCartFromDB(req.session.userId);
+    let cart = await getCartFromDB(req.session.userId);
     if (cart.length === 0) {
       cart = req.session.cart || [];
     }
     if (cart.length === 0) return res.status(400).json({ error: 'Корзина пуста' });
 
     let total = 0;
-    const orderItems = cart.map(item => {
-      const product = db.prepare('SELECT * FROM products WHERE id = ?').get(item.productId);
-      if (!product) return null;
+    const orderItems = [];
+    for (const item of cart) {
+      const { data: product, error } = await supabase
+        .from('products')
+        .select('*')
+        .eq('id', item.productId)
+        .single();
+      if (error || !product) return res.status(404).json({ error: `Товар ${item.productId} не найден` });
       const price = item.price || product.price;
       total += price * item.quantity;
-      return {
+      orderItems.push({
         productId: item.productId,
         name: product.name,
         price: price,
         quantity: item.quantity,
-        priceType: item.priceType || 'retail'
-      };
-    }).filter(item => item !== null);
+        priceType: item.priceType || 'retail',
+      });
+    }
 
-    const info = db.prepare('INSERT INTO orders (user_id, items, total, status) VALUES (?, ?, ?, ?)')
-      .run(req.session.userId, JSON.stringify(orderItems), total, 'pending');
+    const { data: order, error } = await supabase
+      .from('orders')
+      .insert({
+        user_id: req.session.userId,
+        items: JSON.stringify(orderItems),
+        total: total,
+        status: 'pending',
+      })
+      .select('id');
+    if (error) throw error;
+
     if (isAuthenticated(req)) {
-      db.prepare('DELETE FROM cart_items WHERE user_id = ?').run(req.session.userId);
+      await supabase.from('cart_items').delete().eq('user_id', req.session.userId);
     } else {
       req.session.cart = [];
     }
 
-    const orderId = info.lastInsertRowid;
-    const user = db.prepare('SELECT first_name, last_name FROM users WHERE id = ?').get(req.session.userId);
+    const orderId = order[0].id;
+    const { data: user } = await supabase
+      .from('users')
+      .select('first_name, last_name')
+      .eq('id', req.session.userId)
+      .single();
     const message = `🆕 Новый заказ №${orderId} от ${user.first_name} ${user.last_name} на сумму ${total} ₽`;
-    db.prepare('INSERT INTO notifications (message) VALUES (?)').run(message);
-    io.to('admin').emit('new-order', { orderId, total, user: `${user.first_name} ${user.last_name}`, message });
+    await supabase.from('notifications').insert({ message });
 
     res.json({ orderId, total, message: 'Заказ создан' });
   } catch (err) {
@@ -756,34 +692,45 @@ app.post('/api/orders', (req, res) => {
   }
 });
 
-app.get('/api/orders/history', (req, res) => {
+app.get('/api/orders/history', async (req, res) => {
   try {
     if (!isAuthenticated(req)) return res.status(401).json({ error: 'Необходимо войти' });
-    const rows = db.prepare('SELECT * FROM orders WHERE user_id = ? AND is_deleted = 0 ORDER BY created_at DESC')
-      .all(req.session.userId);
-    res.json(rows);
+    const { data, error } = await supabase
+      .from('orders')
+      .select('*')
+      .eq('user_id', req.session.userId)
+      .eq('is_deleted', 0)
+      .order('created_at', { ascending: false });
+    if (error) throw error;
+    res.json(data);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
-app.delete('/api/orders/history', (req, res) => {
+app.delete('/api/orders/history', async (req, res) => {
   try {
     if (!isAuthenticated(req)) return res.status(401).json({ error: 'Необходимо войти' });
-    const info = db.prepare('UPDATE orders SET is_deleted = 1 WHERE user_id = ?').run(req.session.userId);
-    res.json({ success: true, deleted: info.changes });
+    await supabase
+      .from('orders')
+      .update({ is_deleted: 1 })
+      .eq('user_id', req.session.userId);
+    res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-// ---- Админ-маршруты с сжатием изображений ----
-app.put('/api/admin/settings', (req, res) => {
+// ============================================================
+// АДМИН-МАРШРУТЫ (с проверкой isAdmin)
+// ============================================================
+
+app.put('/api/admin/settings', async (req, res) => {
   try {
     if (!isAdmin(req)) return res.status(403).json({ error: 'Доступ запрещён' });
     const updates = req.body;
-    Object.entries(updates).forEach(([key, value]) => {
-      db.prepare('UPDATE settings SET value = ? WHERE key = ?').run(value, key);
-    });
+    for (const [key, value] of Object.entries(updates)) {
+      await supabase.from('settings').update({ value }).eq('key', key);
+    }
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -793,10 +740,20 @@ app.put('/api/admin/settings', (req, res) => {
 app.post('/api/admin/login', (req, res) => {
   try {
     const { login, password } = req.body;
-    const admin = db.prepare('SELECT * FROM admin WHERE login = ? AND password = ?').get(login, password);
-    if (!admin) return res.status(401).json({ error: 'Неверный логин или пароль' });
-    req.session.isAdmin = true;
-    res.json({ success: true });
+    // Проверяем в таблице admin (пароль хранится в открытом виде, но для админки можно так)
+    // В реальном проекте лучше хешировать
+    supabase
+      .from('admin')
+      .select('*')
+      .eq('login', login)
+      .eq('password', password)
+      .single()
+      .then(({ data, error }) => {
+        if (error || !data) return res.status(401).json({ error: 'Неверный логин или пароль' });
+        req.session.isAdmin = true;
+        res.json({ success: true });
+      })
+      .catch(() => res.status(500).json({ error: 'Ошибка входа' }));
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -809,301 +766,257 @@ app.get('/api/admin/status', (req, res) => {
   res.json({ isAdmin: !!req.session.isAdmin });
 });
 
-// ---- Админ: товары (с сжатием) ----
-app.get('/api/admin/products', (req, res) => {
+// ---- Админ: товары ----
+app.get('/api/admin/products', async (req, res) => {
   try {
     if (!isAdmin(req)) return res.status(403).json({ error: 'Доступ запрещён' });
-    const rows = db.prepare(`
-      SELECT p.*, c.name as category_name, b.name as brand_name, v.name as volume_name
-      FROM products p
-      JOIN categories c ON p.category_id = c.id
-      JOIN brands b ON p.brand_id = b.id
-      JOIN volumes v ON p.volume_id = v.id
-    `).all();
-    res.json(rows);
+    const { data, error } = await supabase
+      .from('products')
+      .select(`
+        *,
+        categories:category_id(name),
+        brands:brand_id(name),
+        volumes:volume_id(name)
+      `)
+      .order('id', { ascending: false });
+    if (error) throw error;
+    const items = data.map(p => ({
+      ...p,
+      category_name: p.categories?.name,
+      brand_name: p.brands?.name,
+      volume_name: p.volumes?.name,
+    }));
+    res.json(items);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-app.post('/api/admin/products', async (req, res) => {
+app.post('/api/admin/products', upload.single('image'), async (req, res) => {
   try {
     if (!isAdmin(req)) return res.status(403).json({ error: 'Доступ запрещён' });
-    upload.single('image')(req, res, async (err) => {
-      if (err) return res.status(400).json({ error: err.message });
-      
-      const { name, price, category_id, brand_id, volume_id, imageUrl, description, wholesale_price } = req.body;
-      let image = '';
-      if (req.file) {
-        // Сжатие уже произошло в multer (сохраняем .webp)
-        image = '/uploads/' + req.file.filename;
-        // Дополнительное сжатие через sharp
-        try {
-          await sharp(req.file.path)
-            .resize(800, 800, { fit: 'inside', withoutEnlargement: true })
-            .webp({ quality: 70 })
-            .toFile(req.file.path + '.tmp');
-          fs.renameSync(req.file.path + '.tmp', req.file.path);
-        } catch (err) {
-          console.error('Ошибка сжатия:', err);
-        }
-      } else if (imageUrl && imageUrl.trim() !== '') {
-        image = imageUrl.trim();
-      }
-      if (!name || !price || !category_id || !brand_id || !volume_id) {
-        return res.status(400).json({ error: 'Заполните все поля (название, цена, категория, бренд, объём)' });
-      }
-      const info = db.prepare(`
-        INSERT INTO products (name, price, category_id, brand_id, volume_id, image, description, wholesale_price)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-      `).run(
+    const { name, price, category_id, brand_id, volume_id, imageUrl, description, wholesale_price } = req.body;
+    let image = '';
+    if (req.file) {
+      image = '/uploads/' + req.file.filename;
+    } else if (imageUrl && imageUrl.trim() !== '') {
+      image = imageUrl.trim();
+    }
+    if (!name || !price || !category_id || !brand_id || !volume_id) {
+      return res.status(400).json({ error: 'Заполните все поля (название, цена, категория, бренд, объём)' });
+    }
+    const { data, error } = await supabase
+      .from('products')
+      .insert({
         name,
-        parseFloat(price),
+        price: parseFloat(price),
         category_id,
         brand_id,
         volume_id,
         image,
-        description || '',
-        wholesale_price ? parseFloat(wholesale_price) : null
-      );
-      db.prepare('INSERT INTO notifications (message) VALUES (?)').run('Добавлен новый товар: ' + name);
-      res.json({ id: info.lastInsertRowid });
-    });
+        description: description || '',
+        wholesale_price: wholesale_price ? parseFloat(wholesale_price) : null,
+      })
+      .select('id');
+    if (error) throw error;
+    await supabase.from('notifications').insert({ message: 'Добавлен новый товар: ' + name });
+    res.json({ id: data[0].id });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-app.put('/api/admin/products/:id', async (req, res) => {
+app.put('/api/admin/products/:id', upload.single('image'), async (req, res) => {
   try {
     if (!isAdmin(req)) return res.status(403).json({ error: 'Доступ запрещён' });
-    upload.single('image')(req, res, async (err) => {
-      if (err) return res.status(400).json({ error: err.message });
-      
-      const id = req.params.id;
-      const { name, price, category_id, brand_id, volume_id, imageUrl, description, wholesale_price } = req.body;
-      let image = '';
-      if (req.file) {
-        image = '/uploads/' + req.file.filename;
-        try {
-          await sharp(req.file.path)
-            .resize(800, 800, { fit: 'inside', withoutEnlargement: true })
-            .webp({ quality: 70 })
-            .toFile(req.file.path + '.tmp');
-          fs.renameSync(req.file.path + '.tmp', req.file.path);
-        } catch (err) {
-          console.error('Ошибка сжатия:', err);
-        }
-      } else if (imageUrl && imageUrl.trim() !== '') {
-        image = imageUrl.trim();
-      } else {
-        image = '';
-      }
-      const info = db.prepare(`
-        UPDATE products
-        SET name = ?, price = ?, category_id = ?, brand_id = ?, volume_id = ?, image = ?, description = ?, wholesale_price = ?
-        WHERE id = ?
-      `).run(
+    const id = req.params.id;
+    const { name, price, category_id, brand_id, volume_id, imageUrl, description, wholesale_price } = req.body;
+    let image = '';
+    if (req.file) {
+      image = '/uploads/' + req.file.filename;
+    } else if (imageUrl && imageUrl.trim() !== '') {
+      image = imageUrl.trim();
+    } else {
+      // если не передано новое изображение, не обновляем поле image
+      // получим текущее значение
+      const { data: old } = await supabase.from('products').select('image').eq('id', id).single();
+      if (old) image = old.image;
+    }
+    const { error } = await supabase
+      .from('products')
+      .update({
         name,
-        parseFloat(price),
+        price: parseFloat(price),
         category_id,
         brand_id,
         volume_id,
         image,
-        description || '',
-        wholesale_price ? parseFloat(wholesale_price) : null,
-        id
-      );
-      if (info.changes === 0) return res.status(404).json({ error: 'Товар не найден' });
-      res.json({ success: true });
-    });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-app.delete('/api/admin/products/:id', (req, res) => {
-  try {
-    if (!isAdmin(req)) return res.status(403).json({ error: 'Доступ запрещён' });
-    const info = db.prepare('DELETE FROM products WHERE id = ?').run(req.params.id);
-    if (info.changes === 0) return res.status(404).json({ error: 'Товар не найден' });
+        description: description || '',
+        wholesale_price: wholesale_price ? parseFloat(wholesale_price) : null,
+      })
+      .eq('id', id);
+    if (error) throw error;
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-// ---- Админ: категории (с сжатием) ----
-app.get('/api/admin/categories', (req, res) => {
+app.delete('/api/admin/products/:id', async (req, res) => {
   try {
     if (!isAdmin(req)) return res.status(403).json({ error: 'Доступ запрещён' });
-    const rows = db.prepare('SELECT * FROM categories ORDER BY name').all();
-    res.json(rows);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-app.post('/api/admin/categories', async (req, res) => {
-  try {
-    if (!isAdmin(req)) return res.status(403).json({ error: 'Доступ запрещён' });
-    upload.single('categoryImage')(req, res, async (err) => {
-      if (err) return res.status(400).json({ error: err.message });
-      
-      const { name, icon, imageUrl } = req.body;
-      let image = '';
-      if (req.file) {
-        image = '/uploads/categories/' + req.file.filename;
-        try {
-          await sharp(req.file.path)
-            .resize(400, 400, { fit: 'inside', withoutEnlargement: true })
-            .webp({ quality: 70 })
-            .toFile(req.file.path + '.tmp');
-          fs.renameSync(req.file.path + '.tmp', req.file.path);
-        } catch (err) {
-          console.error('Ошибка сжатия:', err);
-        }
-      } else if (imageUrl && imageUrl.trim() !== '') {
-        image = imageUrl.trim();
-      }
-      if (!name) return res.status(400).json({ error: 'Введите название категории' });
-      const info = db.prepare('INSERT INTO categories (name, icon, image) VALUES (?, ?, ?)')
-        .run(name, icon || '', image);
-      res.json({ id: info.lastInsertRowid });
-    });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-app.put('/api/admin/categories/:id', async (req, res) => {
-  try {
-    if (!isAdmin(req)) return res.status(403).json({ error: 'Доступ запрещён' });
-    upload.single('categoryImage')(req, res, async (err) => {
-      if (err) return res.status(400).json({ error: err.message });
-      
-      const id = req.params.id;
-      const { name, icon, imageUrl } = req.body;
-      let image = '';
-      if (req.file) {
-        image = '/uploads/categories/' + req.file.filename;
-        try {
-          await sharp(req.file.path)
-            .resize(400, 400, { fit: 'inside', withoutEnlargement: true })
-            .webp({ quality: 70 })
-            .toFile(req.file.path + '.tmp');
-          fs.renameSync(req.file.path + '.tmp', req.file.path);
-        } catch (err) {
-          console.error('Ошибка сжатия:', err);
-        }
-      } else if (imageUrl && imageUrl.trim() !== '') {
-        image = imageUrl.trim();
-      } else {
-        image = '';
-      }
-      const info = db.prepare('UPDATE categories SET name = ?, icon = ?, image = ? WHERE id = ?')
-        .run(name, icon || '', image, id);
-      if (info.changes === 0) return res.status(404).json({ error: 'Категория не найдена' });
-      res.json({ success: true });
-    });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-app.delete('/api/admin/categories/:id', (req, res) => {
-  try {
-    if (!isAdmin(req)) return res.status(403).json({ error: 'Доступ запрещён' });
-    const info = db.prepare('DELETE FROM categories WHERE id = ?').run(req.params.id);
-    if (info.changes === 0) return res.status(404).json({ error: 'Категория не найдена' });
+    const { error } = await supabase.from('products').delete().eq('id', req.params.id);
+    if (error) throw error;
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-// ---- Админ: бренды (с сжатием) ----
-app.get('/api/admin/brands', (req, res) => {
+// ---- Админ: категории ----
+app.get('/api/admin/categories', async (req, res) => {
   try {
     if (!isAdmin(req)) return res.status(403).json({ error: 'Доступ запрещён' });
-    const rows = db.prepare(`
-      SELECT b.*, c.name as category_name
-      FROM brands b
-      JOIN categories c ON b.category_id = c.id
-      ORDER BY c.name, b.name
-    `).all();
-    res.json(rows);
+    const { data, error } = await supabase.from('categories').select('*').order('name');
+    if (error) throw error;
+    res.json(data);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
-app.post('/api/admin/brands', async (req, res) => {
+
+app.post('/api/admin/categories', upload.single('categoryImage'), async (req, res) => {
   try {
     if (!isAdmin(req)) return res.status(403).json({ error: 'Доступ запрещён' });
-    upload.single('image')(req, res, async (err) => {
-      if (err) return res.status(400).json({ error: err.message });
-      
-      const { name, description, category_id, imageUrl } = req.body;
-      let image = '';
-      if (req.file) {
-        image = '/uploads/brands/' + req.file.filename;
-        try {
-          await sharp(req.file.path)
-            .resize(600, 600, { fit: 'inside', withoutEnlargement: true })
-            .webp({ quality: 70 })
-            .toFile(req.file.path + '.tmp');
-          fs.renameSync(req.file.path + '.tmp', req.file.path);
-        } catch (err) {
-          console.error('Ошибка сжатия:', err);
-        }
-      } else if (imageUrl && imageUrl.trim() !== '') {
-        image = imageUrl.trim();
-      }
-      if (!name || !category_id) return res.status(400).json({ error: 'Заполните название и категорию' });
-      const info = db.prepare('INSERT INTO brands (name, description, image, category_id) VALUES (?, ?, ?, ?)')
-        .run(name, description || '', image, category_id);
-      res.json({ id: info.lastInsertRowid });
-    });
+    const { name, icon, imageUrl } = req.body;
+    let image = '';
+    if (req.file) {
+      image = '/uploads/categories/' + req.file.filename;
+    } else if (imageUrl && imageUrl.trim() !== '') {
+      image = imageUrl.trim();
+    }
+    if (!name) return res.status(400).json({ error: 'Введите название категории' });
+    const { data, error } = await supabase
+      .from('categories')
+      .insert({ name, icon: icon || '', image })
+      .select('id');
+    if (error) throw error;
+    res.json({ id: data[0].id });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
-app.put('/api/admin/brands/:id', async (req, res) => {
+
+app.put('/api/admin/categories/:id', upload.single('categoryImage'), async (req, res) => {
   try {
     if (!isAdmin(req)) return res.status(403).json({ error: 'Доступ запрещён' });
-    upload.single('image')(req, res, async (err) => {
-      if (err) return res.status(400).json({ error: err.message });
-      
-      const id = req.params.id;
-      const { name, description, category_id, imageUrl } = req.body;
-      let image = '';
-      if (req.file) {
-        image = '/uploads/brands/' + req.file.filename;
-        try {
-          await sharp(req.file.path)
-            .resize(600, 600, { fit: 'inside', withoutEnlargement: true })
-            .webp({ quality: 70 })
-            .toFile(req.file.path + '.tmp');
-          fs.renameSync(req.file.path + '.tmp', req.file.path);
-        } catch (err) {
-          console.error('Ошибка сжатия:', err);
-        }
-      } else if (imageUrl && imageUrl.trim() !== '') {
-        image = imageUrl.trim();
-      } else {
-        image = '';
-      }
-      const info = db.prepare('UPDATE brands SET name = ?, description = ?, image = ?, category_id = ? WHERE id = ?')
-        .run(name, description || '', image, category_id, id);
-      if (info.changes === 0) return res.status(404).json({ error: 'Бренд не найден' });
-      res.json({ success: true });
-    });
+    const id = req.params.id;
+    const { name, icon, imageUrl } = req.body;
+    let image = '';
+    if (req.file) {
+      image = '/uploads/categories/' + req.file.filename;
+    } else if (imageUrl && imageUrl.trim() !== '') {
+      image = imageUrl.trim();
+    } else {
+      const { data: old } = await supabase.from('categories').select('image').eq('id', id).single();
+      if (old) image = old.image;
+    }
+    const { error } = await supabase
+      .from('categories')
+      .update({ name, icon: icon || '', image })
+      .eq('id', id);
+    if (error) throw error;
+    res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
-app.delete('/api/admin/brands/:id', (req, res) => {
+
+app.delete('/api/admin/categories/:id', async (req, res) => {
   try {
     if (!isAdmin(req)) return res.status(403).json({ error: 'Доступ запрещён' });
-    const info = db.prepare('DELETE FROM brands WHERE id = ?').run(req.params.id);
-    if (info.changes === 0) return res.status(404).json({ error: 'Бренд не найден' });
+    const { error } = await supabase.from('categories').delete().eq('id', req.params.id);
+    if (error) throw error;
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ---- Админ: бренды ----
+app.get('/api/admin/brands', async (req, res) => {
+  try {
+    if (!isAdmin(req)) return res.status(403).json({ error: 'Доступ запрещён' });
+    const { data, error } = await supabase
+      .from('brands')
+      .select(`
+        *,
+        categories:category_id(name)
+      `)
+      .order('name');
+    if (error) throw error;
+    const items = data.map(b => ({
+      ...b,
+      category_name: b.categories?.name,
+    }));
+    res.json(items);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/admin/brands', upload.single('image'), async (req, res) => {
+  try {
+    if (!isAdmin(req)) return res.status(403).json({ error: 'Доступ запрещён' });
+    const { name, description, category_id, imageUrl } = req.body;
+    let image = '';
+    if (req.file) {
+      image = '/uploads/brands/' + req.file.filename;
+    } else if (imageUrl && imageUrl.trim() !== '') {
+      image = imageUrl.trim();
+    }
+    if (!name || !category_id) return res.status(400).json({ error: 'Заполните название и категорию' });
+    const { data, error } = await supabase
+      .from('brands')
+      .insert({ name, description: description || '', image, category_id })
+      .select('id');
+    if (error) throw error;
+    res.json({ id: data[0].id });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.put('/api/admin/brands/:id', upload.single('image'), async (req, res) => {
+  try {
+    if (!isAdmin(req)) return res.status(403).json({ error: 'Доступ запрещён' });
+    const id = req.params.id;
+    const { name, description, category_id, imageUrl } = req.body;
+    let image = '';
+    if (req.file) {
+      image = '/uploads/brands/' + req.file.filename;
+    } else if (imageUrl && imageUrl.trim() !== '') {
+      image = imageUrl.trim();
+    } else {
+      const { data: old } = await supabase.from('brands').select('image').eq('id', id).single();
+      if (old) image = old.image;
+    }
+    const { error } = await supabase
+      .from('brands')
+      .update({ name, description: description || '', image, category_id })
+      .eq('id', id);
+    if (error) throw error;
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.delete('/api/admin/brands/:id', async (req, res) => {
+  try {
+    if (!isAdmin(req)) return res.status(403).json({ error: 'Доступ запрещён' });
+    const { error } = await supabase.from('brands').delete().eq('id', req.params.id);
+    if (error) throw error;
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -1111,43 +1024,54 @@ app.delete('/api/admin/brands/:id', (req, res) => {
 });
 
 // ---- Админ: объёмы ----
-app.get('/api/admin/volumes', (req, res) => {
+app.get('/api/admin/volumes', async (req, res) => {
   try {
     if (!isAdmin(req)) return res.status(403).json({ error: 'Доступ запрещён' });
-    const rows = db.prepare('SELECT * FROM volumes ORDER BY sort_order, name').all();
-    res.json(rows);
+    const { data, error } = await supabase.from('volumes').select('*').order('sort_order', { ascending: true });
+    if (error) throw error;
+    res.json(data);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
-app.post('/api/admin/volumes', (req, res) => {
+
+app.post('/api/admin/volumes', async (req, res) => {
   try {
     if (!isAdmin(req)) return res.status(403).json({ error: 'Доступ запрещён' });
     const { name, sort_order } = req.body;
     if (!name) return res.status(400).json({ error: 'Введите название объёма' });
-    const info = db.prepare('INSERT INTO volumes (name, sort_order) VALUES (?, ?)').run(name, sort_order || 0);
-    res.json({ id: info.lastInsertRowid });
+    const { data, error } = await supabase
+      .from('volumes')
+      .insert({ name, sort_order: sort_order || 0 })
+      .select('id');
+    if (error) throw error;
+    res.json({ id: data[0].id });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
-app.put('/api/admin/volumes/:id', (req, res) => {
+
+app.put('/api/admin/volumes/:id', async (req, res) => {
   try {
     if (!isAdmin(req)) return res.status(403).json({ error: 'Доступ запрещён' });
     const { name, sort_order } = req.body;
     if (!name) return res.status(400).json({ error: 'Введите название объёма' });
-    const info = db.prepare('UPDATE volumes SET name = ?, sort_order = ? WHERE id = ?').run(name, sort_order || 0, req.params.id);
-    if (info.changes === 0) return res.status(404).json({ error: 'Объём не найден' });
+    const { error } = await supabase
+      .from('volumes')
+      .update({ name, sort_order: sort_order || 0 })
+      .eq('id', req.params.id);
+    if (error) throw error;
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
-app.delete('/api/admin/volumes/:id', (req, res) => {
+
+app.delete('/api/admin/volumes/:id', async (req, res) => {
   try {
     if (!isAdmin(req)) return res.status(403).json({ error: 'Доступ запрещён' });
-    const info = db.prepare('DELETE FROM volumes WHERE id = ?').run(req.params.id);
-    if (info.changes === 0) return res.status(404).json({ error: 'Объём не найден' });
+    const { error } = await supabase.from('volumes').delete().eq('id', req.params.id);
+    if (error) throw error;
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -1155,31 +1079,40 @@ app.delete('/api/admin/volumes/:id', (req, res) => {
 });
 
 // ---- Админ: пользователи ----
-app.get('/api/admin/users', (req, res) => {
+app.get('/api/admin/users', async (req, res) => {
   try {
     if (!isAdmin(req)) return res.status(403).json({ error: 'Доступ запрещён' });
-    const rows = db.prepare('SELECT id, first_name, last_name, login, is_blocked, created_at FROM users ORDER BY id DESC').all();
-    res.json(rows);
+    const { data, error } = await supabase
+      .from('users')
+      .select('id, first_name, last_name, login, is_blocked, created_at')
+      .order('id', { ascending: false });
+    if (error) throw error;
+    res.json(data);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
-app.put('/api/admin/users/:id/block', (req, res) => {
+
+app.put('/api/admin/users/:id/block', async (req, res) => {
   try {
     if (!isAdmin(req)) return res.status(403).json({ error: 'Доступ запрещён' });
     const { block } = req.body;
-    const info = db.prepare('UPDATE users SET is_blocked = ? WHERE id = ?').run(block ? 1 : 0, req.params.id);
-    if (info.changes === 0) return res.status(404).json({ error: 'Пользователь не найден' });
+    const { error } = await supabase
+      .from('users')
+      .update({ is_blocked: block ? 1 : 0 })
+      .eq('id', req.params.id);
+    if (error) throw error;
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
-app.delete('/api/admin/users/:id', (req, res) => {
+
+app.delete('/api/admin/users/:id', async (req, res) => {
   try {
     if (!isAdmin(req)) return res.status(403).json({ error: 'Доступ запрещён' });
-    const info = db.prepare('DELETE FROM users WHERE id = ?').run(req.params.id);
-    if (info.changes === 0) return res.status(404).json({ error: 'Пользователь не найден' });
+    const { error } = await supabase.from('users').delete().eq('id', req.params.id);
+    if (error) throw error;
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -1187,45 +1120,54 @@ app.delete('/api/admin/users/:id', (req, res) => {
 });
 
 // ---- Админ: новости ----
-app.get('/api/admin/news', (req, res) => {
+app.get('/api/admin/news', async (req, res) => {
   try {
     if (!isAdmin(req)) return res.status(403).json({ error: 'Доступ запрещён' });
-    const rows = db.prepare('SELECT * FROM news ORDER BY created_at DESC').all();
-    res.json(rows);
+    const { data, error } = await supabase.from('news').select('*').order('created_at', { ascending: false });
+    if (error) throw error;
+    res.json(data);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
-app.post('/api/admin/news', (req, res) => {
+
+app.post('/api/admin/news', async (req, res) => {
   try {
     if (!isAdmin(req)) return res.status(403).json({ error: 'Доступ запрещён' });
     const { title, content, is_active } = req.body;
     if (!title || !content) return res.status(400).json({ error: 'Заполните заголовок и текст' });
-    const info = db.prepare('INSERT INTO news (title, content, is_active) VALUES (?, ?, ?)')
-      .run(title, content, is_active || 1);
-    db.prepare('INSERT INTO notifications (message) VALUES (?)').run('📢 Новая новость: ' + title);
-    res.json({ id: info.lastInsertRowid });
+    const { data, error } = await supabase
+      .from('news')
+      .insert({ title, content, is_active: is_active || 1 })
+      .select('id');
+    if (error) throw error;
+    await supabase.from('notifications').insert({ message: '📢 Новая новость: ' + title });
+    res.json({ id: data[0].id });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
-app.put('/api/admin/news/:id', (req, res) => {
+
+app.put('/api/admin/news/:id', async (req, res) => {
   try {
     if (!isAdmin(req)) return res.status(403).json({ error: 'Доступ запрещён' });
     const { title, content, is_active } = req.body;
-    const info = db.prepare('UPDATE news SET title = ?, content = ?, is_active = ? WHERE id = ?')
-      .run(title, content, is_active, req.params.id);
-    if (info.changes === 0) return res.status(404).json({ error: 'Новость не найдена' });
+    const { error } = await supabase
+      .from('news')
+      .update({ title, content, is_active })
+      .eq('id', req.params.id);
+    if (error) throw error;
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
-app.delete('/api/admin/news/:id', (req, res) => {
+
+app.delete('/api/admin/news/:id', async (req, res) => {
   try {
     if (!isAdmin(req)) return res.status(403).json({ error: 'Доступ запрещён' });
-    const info = db.prepare('DELETE FROM news WHERE id = ?').run(req.params.id);
-    if (info.changes === 0) return res.status(404).json({ error: 'Новость не найдена' });
+    const { error } = await supabase.from('news').delete().eq('id', req.params.id);
+    if (error) throw error;
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -1233,29 +1175,45 @@ app.delete('/api/admin/news/:id', (req, res) => {
 });
 
 // ---- Админ: заказы ----
-app.get('/api/admin/orders', (req, res) => {
+app.get('/api/admin/orders', async (req, res) => {
   try {
     if (!isAdmin(req)) return res.status(403).json({ error: 'Доступ запрещён' });
-    const stmt = db.prepare(`
-      SELECT orders.*, users.first_name, users.last_name, users.login
-      FROM orders
-      JOIN users ON orders.user_id = users.id
-      ORDER BY orders.created_at DESC
-    `);
-    res.json(stmt.all());
+    const { data, error } = await supabase
+      .from('orders')
+      .select(`
+        *,
+        users:user_id(first_name, last_name, login)
+      `)
+      .order('created_at', { ascending: false });
+    if (error) throw error;
+    const items = data.map(o => ({
+      ...o,
+      first_name: o.users?.first_name,
+      last_name: o.users?.last_name,
+      login: o.users?.login,
+    }));
+    res.json(items);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
-app.put('/api/admin/orders/:id', (req, res) => {
+
+app.put('/api/admin/orders/:id', async (req, res) => {
   try {
     if (!isAdmin(req)) return res.status(403).json({ error: 'Доступ запрещён' });
     const { status } = req.body;
     if (!status) return res.status(400).json({ error: 'Укажите статус' });
-    const order = db.prepare('SELECT user_id FROM orders WHERE id = ?').get(req.params.id);
+    // Получаем user_id для уведомления
+    const { data: order } = await supabase.from('orders').select('user_id').eq('id', req.params.id).single();
     if (!order) return res.status(404).json({ error: 'Заказ не найден' });
-    const info = db.prepare('UPDATE orders SET status = ? WHERE id = ?').run(status, req.params.id);
-    if (info.changes === 0) return res.status(404).json({ error: 'Заказ не найден' });
+
+    const { error } = await supabase
+      .from('orders')
+      .update({ status })
+      .eq('id', req.params.id);
+    if (error) throw error;
+
+    // Уведомление пользователю (через notifications)
     const statusMap = {
       pending: 'ожидает подтверждения',
       paid: 'оплачен',
@@ -1264,93 +1222,39 @@ app.put('/api/admin/orders/:id', (req, res) => {
     };
     const statusText = statusMap[status] || status;
     const message = `📦 Статус заказа №${req.params.id} изменён на «${statusText}»`;
-    db.prepare('INSERT INTO notifications (message) VALUES (?)').run(message);
-    io.to(`user_${order.user_id}`).emit('order-status-changed', { orderId: req.params.id, status, statusText, message });
+    await supabase.from('notifications').insert({ message });
+
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-// ---- Админ: фон (с сжатием) ----
-app.post('/api/admin/upload-background', async (req, res) => {
+// ---- Админ: фон ----
+app.post('/api/admin/upload-background', upload.single('background'), async (req, res) => {
   try {
     if (!isAdmin(req)) return res.status(403).json({ error: 'Доступ запрещён' });
-    upload.single('background')(req, res, async (err) => {
-      if (err) return res.status(400).json({ error: err.message });
-      if (!req.file) return res.status(400).json({ error: 'Файл не загружен' });
-      
-      // Сжатие фона
-      try {
-        await sharp(req.file.path)
-          .resize(1920, 1080, { fit: 'inside', withoutEnlargement: true })
-          .webp({ quality: 75 })
-          .toFile(req.file.path + '.tmp');
-        fs.renameSync(req.file.path + '.tmp', req.file.path);
-      } catch (err) {
-        console.error('Ошибка сжатия фона:', err);
-      }
-      
-      const filePath = '/uploads/backgrounds/' + req.file.filename;
-      db.prepare('UPDATE settings SET value = ? WHERE key = ?').run(filePath, 'site_background');
-      res.json({ success: true, path: filePath });
-    });
+    if (!req.file) return res.status(400).json({ error: 'Файл не загружен' });
+    const filePath = '/uploads/backgrounds/' + req.file.filename;
+    await supabase.from('settings').update({ value: filePath }).eq('key', 'site_background');
+    res.json({ success: true, path: filePath });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
-app.put('/api/admin/background', (req, res) => {
+
+app.put('/api/admin/background', async (req, res) => {
   try {
     if (!isAdmin(req)) return res.status(403).json({ error: 'Доступ запрещён' });
     const { url } = req.body;
-    db.prepare('UPDATE settings SET value = ? WHERE key = ?').run(url || '', 'site_background');
+    await supabase.from('settings').update({ value: url || '' }).eq('key', 'site_background');
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-// ---- Sitemap ----
-app.get('/sitemap.xml', (req, res) => {
-  try {
-    const baseUrl = 'https://sushnykoff.onrender.com';
-    const today = new Date().toISOString().split('T')[0];
-    const products = db.prepare('SELECT id FROM products').all();
-    let urls = `
-      <url><loc>${baseUrl}/</loc><lastmod>${today}</lastmod><changefreq>daily</changefreq><priority>1.0</priority></url>
-      <url><loc>${baseUrl}/about.html</loc><lastmod>${today}</lastmod><changefreq>monthly</changefreq><priority>0.8</priority></url>
-      <url><loc>${baseUrl}/contacts.html</loc><lastmod>${today}</lastmod><changefreq>monthly</changefreq><priority>0.8</priority></url>
-      <url><loc>${baseUrl}/map.html</loc><lastmod>${today}</lastmod><changefreq>monthly</changefreq><priority>0.7</priority></url>
-      <url><loc>${baseUrl}/profile.html</loc><lastmod>${today}</lastmod><changefreq>monthly</changefreq><priority>0.7</priority></url>
-    `;
-    products.forEach(p => {
-      urls += `<url><loc>${baseUrl}/product.html?id=${p.id}</loc><lastmod>${today}</lastmod><changefreq>weekly</changefreq><priority>0.9</priority></url>`;
-    });
-    const xml = `<?xml version="1.0" encoding="UTF-8"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">${urls}</urlset>`;
-    res.header('Content-Type', 'application/xml');
-    res.send(xml);
-  } catch (err) {
-    console.error('Ошибка генерации sitemap.xml:', err);
-    res.status(500).send('Внутренняя ошибка сервера');
-  }
-});
-
-// ---- WebSocket ----
-io.on('connection', (socket) => {
-  console.log('🔌 Новое подключение:', socket.id);
-  socket.on('register-user', (data) => {
-    if (data && data.userId) {
-      socket.join(`user_${data.userId}`);
-      console.log(`✅ Пользователь ${data.userId} подключён к комнате user_${data.userId}`);
-    }
-    socket.join('admin');
-  });
-  socket.on('disconnect', () => {
-    console.log('🔌 Отключение:', socket.id);
-  });
-});
-
 // ---- Запуск ----
-server.listen(PORT, () => {
+app.listen(PORT, () => {
   console.log(`✅ Сервер запущен на http://localhost:${PORT}`);
 });
