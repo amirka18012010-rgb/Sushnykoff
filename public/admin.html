@@ -137,7 +137,7 @@
       <div id="brandList"></div>
     </div>
 
-    <!-- Остальные вкладки (объёмы, заказы, пользователи, новости, настройки, дизайн) без изменений -->
+    <!-- Остальные вкладки -->
     <div id="tab-volumes" class="tab-content">
       <h3 style="margin-bottom:16px;">Управление объёмами</h3>
       <form id="volumeForm" class="admin-form">
@@ -442,14 +442,14 @@
           return;
         }
         list.innerHTML = products.map(p => {
-          const extraCat = p.extra_category_id ? ` (доп: ${p.extra_category_id})` : '';
+          const extra = p.extra_category_name ? ` / ${p.extra_category_name}` : '';
           return `
           <div class="admin-list-item">
             <div class="item-preview">
               ${p.image ? `<img src="${p.image}" alt="${p.name}">` : ''}
               <div class="item-info">
                 <span class="name">${p.name}</span>
-                <span class="meta">${p.category_name || 'Без кат.'}${extraCat} • ${p.brand_name || 'Без бр.'} • ${p.volume_name || 'Без объёма'} • ${p.price} ₽</span>
+                <span class="meta">${p.category_name || 'Без кат.'}${extra} • ${p.brand_name || 'Без бр.'} • ${p.volume_name || 'Без объёма'} • ${p.price} ₽</span>
                 ${p.wholesale_price ? `<span class="meta">Опт: ${p.wholesale_price} ₽</span>` : ''}
               </div>
             </div>
@@ -639,14 +639,14 @@
           return;
         }
         list.innerHTML = brands.map(b => {
-          const extraCat = b.extra_category_id ? ` (доп: ${b.extra_category_id})` : '';
+          const extra = b.extra_category_name ? ` / ${b.extra_category_name}` : '';
           return `
           <div class="admin-list-item">
             <div class="item-preview">
               ${b.image ? `<img src="${b.image}" alt="${b.name}">` : '<span style="font-size:30px;">📦</span>'}
               <div class="item-info">
                 <span class="name">${b.name}</span>
-                <span class="meta">${b.category_name || 'Без кат.'}${extraCat} • ${b.description ? b.description.substring(0, 40) : ''}</span>
+                <span class="meta">${b.category_name || 'Без кат.'}${extra} • ${b.description ? b.description.substring(0, 40) : ''}</span>
               </div>
             </div>
             <div class="item-actions">

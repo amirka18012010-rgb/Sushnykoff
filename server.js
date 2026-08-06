@@ -117,6 +117,7 @@ async function getProductExtraCategory(productId) {
 }
 
 async function setProductExtraCategory(productId, categoryId) {
+  // Удаляем старые связи
   await supabase.from('product_categories').delete().eq('product_id', productId);
   if (categoryId) {
     await supabase.from('product_categories').insert({ product_id: productId, category_id: categoryId });
@@ -140,7 +141,7 @@ async function setBrandExtraCategory(brandId, categoryId) {
   }
 }
 
-// ---- Для массовой загрузки (оптимизация) ----
+// ---- Для массовой загрузки с названиями категорий ----
 async function getProductExtraCategoriesBatch(productIds) {
   if (!productIds.length) return {};
   const { data, error } = await supabase
@@ -847,7 +848,7 @@ app.delete('/api/orders/history', async (req, res) => {
 });
 
 // ============================================================
-// АДМИН-МАРШРУТЫ
+// АДМИН-МАРШРУТЫ (полностью обновлённые)
 // ============================================================
 
 app.put('/api/admin/settings', async (req, res) => {
@@ -888,7 +889,7 @@ app.get('/api/admin/status', (req, res) => {
   res.json({ isAdmin: !!req.session.isAdmin });
 });
 
-// ---- Админ: товары (с одной дополнительной категорией) ----
+// ---- Админ: товары (с доп. категорией и названием) ----
 app.get('/api/admin/products', async (req, res) => {
   try {
     if (!isAdmin(req)) return res.status(403).json({ error: 'Доступ запрещён' });
@@ -896,9 +897,9 @@ app.get('/api/admin/products', async (req, res) => {
       .from('products')
       .select(`
         *,
-        categories:category_id(name),
-        brands:brand_id(name),
-        volumes:volume_id(name)
+        categories:category_id(id, name),
+        brands:brand_id(id, name),
+        volumes:volume_id(id, name)
       `)
       .order('id', { ascending: false });
     if (error) throw error;
@@ -906,12 +907,26 @@ app.get('/api/admin/products', async (req, res) => {
     const productIds = products.map(p => p.id);
     const extraMap = await getProductExtraCategoriesBatch(productIds);
 
+    // Получаем названия категорий для extra
+    const extraCategoryIds = Object.values(extraMap).filter(id => id !== null);
+    let categoryNames = {};
+    if (extraCategoryIds.length) {
+      const { data: cats, error: catErr } = await supabase
+        .from('categories')
+        .select('id, name')
+        .in('id', extraCategoryIds);
+      if (!catErr) {
+        cats.forEach(c => { categoryNames[c.id] = c.name; });
+      }
+    }
+
     const items = products.map(p => ({
       ...p,
       category_name: p.categories?.name,
       brand_name: p.brands?.name,
       volume_name: p.volumes?.name,
       extra_category_id: extraMap[p.id] || null,
+      extra_category_name: extraMap[p.id] ? categoryNames[extraMap[p.id]] : null,
     }));
     res.json(items);
   } catch (err) {
@@ -949,8 +964,10 @@ app.post('/api/admin/products', upload.single('image'), async (req, res) => {
     if (error) throw error;
     const productId = data[0].id;
     // Сохраняем дополнительную категорию (если передана)
-    if (extra_category_id) {
-      await setProductExtraCategory(productId, extra_category_id);
+    if (extra_category_id && extra_category_id !== '') {
+      await setProductExtraCategory(productId, parseInt(extra_category_id));
+    } else {
+      await setProductExtraCategory(productId, null);
     }
     await supabase.from('notifications').insert({ message: 'Добавлен новый товар: ' + name });
     res.json({ id: productId });
@@ -989,7 +1006,11 @@ app.put('/api/admin/products/:id', upload.single('image'), async (req, res) => {
       .eq('id', id);
     if (error) throw error;
     // Обновляем дополнительную категорию
-    await setProductExtraCategory(id, extra_category_id || null);
+    if (extra_category_id && extra_category_id !== '') {
+      await setProductExtraCategory(id, parseInt(extra_category_id));
+    } else {
+      await setProductExtraCategory(id, null);
+    }
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -1080,7 +1101,7 @@ app.delete('/api/admin/categories/:id', async (req, res) => {
   }
 });
 
-// ---- Админ: бренды (с одной дополнительной категорией) ----
+// ---- Админ: бренды (с доп. категорией и названием) ----
 app.get('/api/admin/brands', async (req, res) => {
   try {
     if (!isAdmin(req)) return res.status(403).json({ error: 'Доступ запрещён' });
@@ -1088,7 +1109,7 @@ app.get('/api/admin/brands', async (req, res) => {
       .from('brands')
       .select(`
         *,
-        categories:category_id(name)
+        categories:category_id(id, name)
       `)
       .order('name');
     if (error) throw error;
@@ -1096,10 +1117,23 @@ app.get('/api/admin/brands', async (req, res) => {
     const brandIds = brands.map(b => b.id);
     const extraMap = await getBrandExtraCategoriesBatch(brandIds);
 
+    const extraCategoryIds = Object.values(extraMap).filter(id => id !== null);
+    let categoryNames = {};
+    if (extraCategoryIds.length) {
+      const { data: cats, error: catErr } = await supabase
+        .from('categories')
+        .select('id, name')
+        .in('id', extraCategoryIds);
+      if (!catErr) {
+        cats.forEach(c => { categoryNames[c.id] = c.name; });
+      }
+    }
+
     const items = brands.map(b => ({
       ...b,
       category_name: b.categories?.name,
       extra_category_id: extraMap[b.id] || null,
+      extra_category_name: extraMap[b.id] ? categoryNames[extraMap[b.id]] : null,
     }));
     res.json(items);
   } catch (err) {
@@ -1125,8 +1159,10 @@ app.post('/api/admin/brands', upload.single('image'), async (req, res) => {
       .select('id');
     if (error) throw error;
     const brandId = data[0].id;
-    if (extra_category_id) {
-      await setBrandExtraCategory(brandId, extra_category_id);
+    if (extra_category_id && extra_category_id !== '') {
+      await setBrandExtraCategory(brandId, parseInt(extra_category_id));
+    } else {
+      await setBrandExtraCategory(brandId, null);
     }
     res.json({ id: brandId });
   } catch (err) {
@@ -1154,7 +1190,11 @@ app.put('/api/admin/brands/:id', upload.single('image'), async (req, res) => {
       .update({ name, description: description || '', image, category_id })
       .eq('id', id);
     if (error) throw error;
-    await setBrandExtraCategory(id, extra_category_id || null);
+    if (extra_category_id && extra_category_id !== '') {
+      await setBrandExtraCategory(id, parseInt(extra_category_id));
+    } else {
+      await setBrandExtraCategory(id, null);
+    }
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
