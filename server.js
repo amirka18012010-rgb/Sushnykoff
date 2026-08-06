@@ -105,12 +105,52 @@ async function setCartToDB(userId, cart) {
   await supabase.from('cart_items').insert(items);
 }
 
-// ---- Функции для дополнительных категорий ----
+// ---- Функции для дополнительных категорий (оптимизированные) ----
+async function getProductCategoriesBatch(productIds) {
+  if (!productIds.length) return {};
+  const { data, error } = await supabase
+    .from('product_categories')
+    .select('product_id, category_id')
+    .in('product_id', productIds);
+  if (error) return {};
+  const map = {};
+  data.forEach(row => {
+    if (!map[row.product_id]) map[row.product_id] = [];
+    map[row.product_id].push(row.category_id);
+  });
+  return map;
+}
+
+async function getBrandCategoriesBatch(brandIds) {
+  if (!brandIds.length) return {};
+  const { data, error } = await supabase
+    .from('brand_categories')
+    .select('brand_id, category_id')
+    .in('brand_id', brandIds);
+  if (error) return {};
+  const map = {};
+  data.forEach(row => {
+    if (!map[row.brand_id]) map[row.brand_id] = [];
+    map[row.brand_id].push(row.category_id);
+  });
+  return map;
+}
+
+// ---- Вспомогательные функции для одиночных запросов (для публичных страниц) ----
 async function getProductCategories(productId) {
   const { data, error } = await supabase
     .from('product_categories')
     .select('category_id')
     .eq('product_id', productId);
+  if (error) return [];
+  return data.map(row => row.category_id);
+}
+
+async function getBrandCategories(brandId) {
+  const { data, error } = await supabase
+    .from('brand_categories')
+    .select('category_id')
+    .eq('brand_id', brandId);
   if (error) return [];
   return data.map(row => row.category_id);
 }
@@ -121,15 +161,6 @@ async function setProductCategories(productId, categoryIds) {
     const items = categoryIds.map(catId => ({ product_id: productId, category_id: catId }));
     await supabase.from('product_categories').insert(items);
   }
-}
-
-async function getBrandCategories(brandId) {
-  const { data, error } = await supabase
-    .from('brand_categories')
-    .select('category_id')
-    .eq('brand_id', brandId);
-  if (error) return [];
-  return data.map(row => row.category_id);
 }
 
 async function setBrandCategories(brandId, categoryIds) {
@@ -859,11 +890,11 @@ app.get('/api/admin/status', (req, res) => {
   res.json({ isAdmin: !!req.session.isAdmin });
 });
 
-// ---- Админ: товары (с доп. категориями) ----
+// ---- Админ: товары (оптимизированный) ----
 app.get('/api/admin/products', async (req, res) => {
   try {
     if (!isAdmin(req)) return res.status(403).json({ error: 'Доступ запрещён' });
-    const { data, error } = await supabase
+    const { data: products, error } = await supabase
       .from('products')
       .select(`
         *,
@@ -873,17 +904,17 @@ app.get('/api/admin/products', async (req, res) => {
       `)
       .order('id', { ascending: false });
     if (error) throw error;
-    const items = [];
-    for (const p of data) {
-      const extra = await getProductCategories(p.id);
-      items.push({
-        ...p,
-        category_name: p.categories?.name,
-        brand_name: p.brands?.name,
-        volume_name: p.volumes?.name,
-        extra_category_ids: extra,
-      });
-    }
+
+    const productIds = products.map(p => p.id);
+    const extraMap = await getProductCategoriesBatch(productIds);
+
+    const items = products.map(p => ({
+      ...p,
+      category_name: p.categories?.name,
+      brand_name: p.brands?.name,
+      volume_name: p.volumes?.name,
+      extra_category_ids: extraMap[p.id] || [],
+    }));
     res.json(items);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -919,8 +950,14 @@ app.post('/api/admin/products', upload.single('image'), async (req, res) => {
       .select('id');
     if (error) throw error;
     const productId = data[0].id;
-    if (extra_category_ids && Array.isArray(extra_category_ids)) {
-      await setProductCategories(productId, extra_category_ids);
+    // Обработка extra_category_ids как массива
+    let extraIds = [];
+    if (extra_category_ids) {
+      if (Array.isArray(extra_category_ids)) extraIds = extra_category_ids.map(Number);
+      else if (typeof extra_category_ids === 'string') extraIds = extra_category_ids.split(',').map(Number);
+    }
+    if (extraIds.length) {
+      await setProductCategories(productId, extraIds);
     }
     await supabase.from('notifications').insert({ message: 'Добавлен новый товар: ' + name });
     res.json({ id: productId });
@@ -958,11 +995,12 @@ app.put('/api/admin/products/:id', upload.single('image'), async (req, res) => {
       })
       .eq('id', id);
     if (error) throw error;
-    if (extra_category_ids && Array.isArray(extra_category_ids)) {
-      await setProductCategories(id, extra_category_ids);
-    } else {
-      await setProductCategories(id, []);
+    let extraIds = [];
+    if (extra_category_ids) {
+      if (Array.isArray(extra_category_ids)) extraIds = extra_category_ids.map(Number);
+      else if (typeof extra_category_ids === 'string') extraIds = extra_category_ids.split(',').map(Number);
     }
+    await setProductCategories(id, extraIds);
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -1053,11 +1091,11 @@ app.delete('/api/admin/categories/:id', async (req, res) => {
   }
 });
 
-// ---- Админ: бренды (с доп. категориями) ----
+// ---- Админ: бренды (оптимизированный) ----
 app.get('/api/admin/brands', async (req, res) => {
   try {
     if (!isAdmin(req)) return res.status(403).json({ error: 'Доступ запрещён' });
-    const { data, error } = await supabase
+    const { data: brands, error } = await supabase
       .from('brands')
       .select(`
         *,
@@ -1065,15 +1103,15 @@ app.get('/api/admin/brands', async (req, res) => {
       `)
       .order('name');
     if (error) throw error;
-    const items = [];
-    for (const b of data) {
-      const extra = await getBrandCategories(b.id);
-      items.push({
-        ...b,
-        category_name: b.categories?.name,
-        extra_category_ids: extra,
-      });
-    }
+
+    const brandIds = brands.map(b => b.id);
+    const extraMap = await getBrandCategoriesBatch(brandIds);
+
+    const items = brands.map(b => ({
+      ...b,
+      category_name: b.categories?.name,
+      extra_category_ids: extraMap[b.id] || [],
+    }));
     res.json(items);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -1098,8 +1136,13 @@ app.post('/api/admin/brands', upload.single('image'), async (req, res) => {
       .select('id');
     if (error) throw error;
     const brandId = data[0].id;
-    if (extra_category_ids && Array.isArray(extra_category_ids)) {
-      await setBrandCategories(brandId, extra_category_ids);
+    let extraIds = [];
+    if (extra_category_ids) {
+      if (Array.isArray(extra_category_ids)) extraIds = extra_category_ids.map(Number);
+      else if (typeof extra_category_ids === 'string') extraIds = extra_category_ids.split(',').map(Number);
+    }
+    if (extraIds.length) {
+      await setBrandCategories(brandId, extraIds);
     }
     res.json({ id: brandId });
   } catch (err) {
@@ -1127,11 +1170,12 @@ app.put('/api/admin/brands/:id', upload.single('image'), async (req, res) => {
       .update({ name, description: description || '', image, category_id })
       .eq('id', id);
     if (error) throw error;
-    if (extra_category_ids && Array.isArray(extra_category_ids)) {
-      await setBrandCategories(id, extra_category_ids);
-    } else {
-      await setBrandCategories(id, []);
+    let extraIds = [];
+    if (extra_category_ids) {
+      if (Array.isArray(extra_category_ids)) extraIds = extra_category_ids.map(Number);
+      else if (typeof extra_category_ids === 'string') extraIds = extra_category_ids.split(',').map(Number);
     }
+    await setBrandCategories(id, extraIds);
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
