@@ -33,7 +33,6 @@
     .btn-green { background:#27ae60; color:white; }
     .btn-red { background:#e74c3c; color:white; }
 
-    /* Стили для превью изображений в формах */
     .image-preview {
       margin-top: 8px;
       max-width: 200px;
@@ -86,7 +85,7 @@
       </div>
     </header>
 
-    <!-- Вкладка: Товары -->
+    <!-- Товары -->
     <div id="tab-products" class="tab-content active">
       <form id="productForm" class="admin-form" enctype="multipart/form-data">
         <input type="hidden" id="editId" value="">
@@ -108,7 +107,7 @@
       <div id="adminProductList"></div>
     </div>
 
-    <!-- Вкладка: Категории -->
+    <!-- Категории -->
     <div id="tab-categories" class="tab-content">
       <h3 style="margin-bottom:16px;">Управление категориями</h3>
       <form id="categoryForm" class="admin-form" enctype="multipart/form-data">
@@ -126,7 +125,7 @@
       <div id="categoryList"></div>
     </div>
 
-    <!-- Вкладка: Бренды -->
+    <!-- Бренды -->
     <div id="tab-brands" class="tab-content">
       <h3 style="margin-bottom:16px;">Управление брендами</h3>
       <form id="brandForm" class="admin-form" enctype="multipart/form-data">
@@ -145,25 +144,80 @@
       <div id="brandList"></div>
     </div>
 
-    <!-- Остальные вкладки (объёмы, заказы, пользователи, новости, настройки, дизайн) без изменений -->
-    <div id="tab-volumes" class="tab-content">...</div>
-    <div id="tab-orders" class="tab-content">...</div>
-    <div id="tab-users" class="tab-content">...</div>
-    <div id="tab-news" class="tab-content">...</div>
-    <div id="tab-settings" class="tab-content">...</div>
-    <div id="tab-design" class="tab-content">...</div>
+    <!-- Объёмы -->
+    <div id="tab-volumes" class="tab-content">
+      <h3 style="margin-bottom:16px;">Управление объёмами</h3>
+      <form id="volumeForm" class="admin-form">
+        <input type="hidden" id="editVolumeId">
+        <div><label>Название объёма *</label><input type="text" id="volumeName" placeholder="0.33л" required></div>
+        <div><label>Порядок сортировки</label><input type="number" id="volumeSort" value="0" step="1"></div>
+        <button type="submit" id="volumeSubmitBtn" style="grid-column:1/-1; padding:14px; background:#27ae60; color:white; border:none; border-radius:40px; font-weight:700; cursor:pointer;">➕ Добавить объём</button>
+      </form>
+      <div id="volumeList"></div>
+    </div>
+
+    <!-- Заказы -->
+    <div id="tab-orders" class="tab-content">
+      <h3 style="margin-bottom:16px;">Список заказов</h3>
+      <div id="ordersList"></div>
+    </div>
+
+    <!-- Пользователи -->
+    <div id="tab-users" class="tab-content">
+      <h3 style="margin-bottom:16px;">Список пользователей</h3>
+      <div id="usersList"></div>
+    </div>
+
+    <!-- Новости -->
+    <div id="tab-news" class="tab-content">
+      <h3 style="margin-bottom:16px;">Управление новостями</h3>
+      <form id="newsForm" class="admin-form">
+        <div class="full-width"><label>Заголовок</label><input type="text" id="newsTitle" required></div>
+        <div class="full-width"><label>Текст</label><textarea id="newsContent" rows="4" required></textarea></div>
+        <div class="full-width"><label>Активно</label><select id="newsActive"><option value="1">Да</option><option value="0">Нет</option></select></div>
+        <input type="hidden" id="editNewsId">
+        <button type="submit" id="newsSubmitBtn" style="grid-column:1/-1; padding:14px; background:#27ae60; color:white; border:none; border-radius:40px; font-weight:700; cursor:pointer;">➕ Добавить новость</button>
+      </form>
+      <div id="newsList"></div>
+    </div>
+
+    <!-- Настройки -->
+    <div id="tab-settings" class="tab-content">
+      <h3 style="margin-bottom:16px;">Настройки сайта</h3>
+      <form id="settingsForm" class="admin-form">
+        <div class="full-width"><label>Текст "О нас"</label><textarea id="settingsAbout" rows="5"></textarea></div>
+        <div><label>Адрес</label><input type="text" id="settingsAddress"></div>
+        <div><label>Телефон</label><input type="text" id="settingsPhone"></div>
+        <div><label>Email</label><input type="email" id="settingsEmail"></div>
+        <div><label>График работы</label><input type="text" id="settingsSchedule"></div>
+        <button type="submit" style="grid-column:1/-1; padding:14px; background:#27ae60; color:white; border:none; border-radius:40px; font-weight:700; cursor:pointer;">💾 Сохранить настройки</button>
+      </form>
+      <div id="settingsMessage" style="margin-top:10px;"></div>
+    </div>
+
+    <!-- Дизайн -->
+    <div id="tab-design" class="tab-content">
+      <h3 style="margin-bottom:16px;">Настройка фона сайта</h3>
+      <div class="admin-form">
+        <div class="full-width"><label>Текущий фон</label><div id="bgPreview" class="preview-box"><span class="empty">Фон не установлен</span></div></div>
+        <div class="full-width"><label>Установить фон по ссылке</label><div class="bg-form-row"><input type="text" id="bgUrl" placeholder="https://example.com/image.jpg"><button id="setBgUrlBtn" class="btn-green">Применить</button></div></div>
+        <div class="full-width"><label>Или загрузить изображение</label><div class="bg-form-row"><input type="file" id="bgFile" accept="image/*"><button id="uploadBgBtn" class="btn-green">Загрузить</button></div></div>
+        <div class="full-width"><button id="removeBgBtn" class="btn-red">Удалить фон</button></div>
+        <div id="bgMessage" class="full-width"></div>
+      </div>
+    </div>
+
   </div>
 </div>
 
 <script>
-  // ===== ПОЛНЫЙ СКРИПТ АДМИНКИ =====
+  // ===== ПОЛНЫЙ СКРИПТ АДМИНКИ (с превью) =====
   const loginDiv = document.getElementById('adminLogin');
   const panelDiv = document.getElementById('adminPanel');
   const loginBtn = document.getElementById('loginBtn');
   const logoutBtn = document.getElementById('logoutBtn');
   const loginError = document.getElementById('loginError');
 
-  // ---- Очистка кеша на клиенте ----
   function clearClientCache(key) {
     if (window.clearCache) {
       window.clearCache(key);
@@ -181,14 +235,13 @@
     }
   }
 
-  // ---- Универсальная функция для превью изображений ----
+  // ---- Универсальная функция для превью ----
   function setupImagePreview(urlInputId, fileInputId, previewContainerId) {
     const urlInput = document.getElementById(urlInputId);
     const fileInput = document.getElementById(fileInputId);
     const previewContainer = document.getElementById(previewContainerId);
     if (!urlInput || !previewContainer) return;
 
-    // Функция обновления превью
     function updatePreview(src) {
       if (src && src.trim() !== '') {
         previewContainer.innerHTML = `<img src="${src}" alt="Превью">`;
@@ -197,30 +250,25 @@
       }
     }
 
-    // При вводе URL
     urlInput.addEventListener('input', function() {
       updatePreview(this.value);
     });
 
-    // При выборе файла
     if (fileInput) {
       fileInput.addEventListener('change', function() {
         const file = this.files[0];
         if (file) {
           const reader = new FileReader();
           reader.onload = function(e) {
-            // Показываем превью из файла, но также можно обновить поле URL (по желанию)
             previewContainer.innerHTML = `<img src="${e.target.result}" alt="Превью">`;
           };
           reader.readAsDataURL(file);
         } else {
-          // Если файл не выбран, возвращаем к URL (если есть)
           updatePreview(urlInput.value);
         }
       });
     }
 
-    // Инициализация: если поле URL уже содержит значение (например, при редактировании)
     if (urlInput.value) {
       updatePreview(urlInput.value);
     }
@@ -235,12 +283,10 @@
         panelDiv.classList.add('active');
         loadAll();
         showTab('products');
-        // Настроить превью после загрузки всех данных
         setTimeout(setupAllPreviews, 500);
       }
     });
 
-  // ---- Функция настройки всех превью (вызывается после загрузки) ----
   function setupAllPreviews() {
     setupImagePreview('productImageUrl', 'productImage', 'productImagePreview');
     setupImagePreview('categoryImageUrl', 'categoryImageFile', 'categoryImagePreview');
@@ -281,7 +327,6 @@
     }
     if (tabName === 'settings') loadSettings();
     if (tabName === 'design') loadBgPreview();
-    // При переключении на вкладки с формами, обновить превью
     if (tabName === 'products' || tabName === 'categories' || tabName === 'brands') {
       setTimeout(setupAllPreviews, 100);
     }
@@ -308,7 +353,6 @@
     loadNewsAdmin();
   }
 
-  // ---- Загрузка категорий в селекты ----
   function loadCategoriesSelect() {
     fetch('/api/admin/categories')
       .then(r => r.json())
@@ -328,7 +372,6 @@
       });
   }
 
-  // ---- Загрузка брендов в селект товара ----
   function loadBrandsSelect() {
     fetch('/api/admin/brands')
       .then(r => r.json())
@@ -345,7 +388,6 @@
       .catch(err => console.error('Ошибка загрузки брендов:', err));
   }
 
-  // ---- Загрузка объёмов в селект товара ----
   function loadVolumesSelect() {
     fetch('/api/admin/volumes')
       .then(r => r.json())
@@ -362,7 +404,7 @@
       .catch(err => console.error('Ошибка загрузки объёмов:', err));
   }
 
-  // ---- Товары (админ) ----
+  // ---- Товары ----
   function loadProductsAdmin() {
     fetch('/api/admin/products')
       .then(r => r.json())
@@ -403,7 +445,6 @@
               document.getElementById('productImageUrl').value = product.image || '';
               document.getElementById('productDescription').value = product.description || '';
               document.getElementById('formSubmitBtn').textContent = '💾 Сохранить изменения';
-              // Обновляем превью
               setTimeout(setupAllPreviews, 100);
             }
           });
@@ -458,7 +499,7 @@
       });
   });
 
-  // ---- Категории (админ) ----
+  // ---- Категории ----
   function loadCategoriesAdmin() {
     fetch('/api/admin/categories')
       .then(r => r.json())
@@ -543,7 +584,7 @@
       .catch(err => alert('Ошибка: ' + err.message));
   });
 
-  // ---- Бренды (админ) ----
+  // ---- Бренды ----
   function loadBrandsAdmin() {
     fetch('/api/admin/brands')
       .then(r => r.json())
@@ -628,7 +669,7 @@
       });
   });
 
-  // ---- Объёмы (админ) ----
+  // ---- Объёмы ----
   function loadVolumesAdmin() {
     fetch('/api/admin/volumes')
       .then(r => r.json())
@@ -691,7 +732,7 @@
       });
   });
 
-  // ---- Заказы (админ) ----
+  // ---- Заказы ----
   function loadOrdersAdmin() {
     fetch('/api/admin/orders')
       .then(r => r.json())
@@ -747,7 +788,7 @@
       });
   }
 
-  // ---- Пользователи (админ) ----
+  // ---- Пользователи ----
   function loadUsersAdmin() {
     fetch('/api/admin/users')
       .then(r => r.json())
@@ -806,7 +847,7 @@
       });
   }
 
-  // ---- Новости (админ) ----
+  // ---- Новости ----
   function loadNewsAdmin() {
     fetch('/api/admin/news')
       .then(r => r.json())
@@ -879,7 +920,7 @@
       });
   });
 
-  // ---- Настройки (админ) ----
+  // ---- Настройки ----
   function loadSettings() {
     fetch('/api/settings')
       .then(r => r.json())
@@ -924,7 +965,7 @@
       });
   });
 
-  // ---- Дизайн (админ) ----
+  // ---- Дизайн ----
   function loadBgPreview() {
     fetch('/api/background')
       .then(r => r.json())
