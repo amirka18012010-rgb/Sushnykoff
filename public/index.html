@@ -19,7 +19,10 @@
     </a>
     <div class="header-search">
       <form autocomplete="off" onsubmit="handleHeaderSearch(); return false;" style="display:flex; flex:1; gap:0; width:100%;">
-        <input type="text" id="headerSearchInput" placeholder="Поиск..." name="search-query" style="flex:1; border:none; background:transparent; padding:10px 0; font-size:15px; outline:none; min-width:0;">
+        <!-- Скрытые поля для отвлечения браузера -->
+        <input type="text" style="display:none;" name="fake-username" autocomplete="off">
+        <input type="password" style="display:none;" name="fake-password" autocomplete="off">
+        <input type="text" id="headerSearchInput" placeholder="Поиск..." name="search-query" style="flex:1; border:none; background:transparent; padding:10px 0; font-size:15px; outline:none; min-width:0;" autocomplete="off">
         <button type="submit" id="headerSearchBtn" style="background:#27ae60; border:none; color:white; width:40px; height:40px; border-radius:40px; display:flex; align-items:center; justify-content:center; font-size:18px; cursor:pointer; transition:background 0.2s; flex-shrink:0;">🔍</button>
       </form>
     </div>
@@ -86,7 +89,6 @@
 </div>
 
 <!-- ===== МОДАЛКИ ===== -->
-
 <!-- ВХОД -->
 <div class="auth-overlay" id="loginOverlay">
   <div class="auth-panel">
@@ -126,7 +128,7 @@
   </div>
 </div>
 
-<!-- РЕГИСТРАЦИЯ (с полем телефона) -->
+<!-- РЕГИСТРАЦИЯ (с телефоном) -->
 <div class="auth-overlay" id="registerOverlay">
   <div class="auth-panel">
     <div class="auth-header">
