@@ -1074,3 +1074,143 @@ body.has-bg .side-header {
   color: #e67e22;
   font-weight: 600;
 }
+
+/* ============================================================
+   ХЕДЕР С РАЗМЫТЫМ ФОНОМ
+   ============================================================ */
+
+.header {
+  position: relative;
+  background: transparent !important;
+  border: 1px solid rgba(255, 255, 255, 0.15) !important;
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  box-shadow: 0 4px 30px rgba(0, 0, 0, 0.1);
+  overflow: hidden;
+  z-index: 10;
+}
+
+/* Псевдоэлемент для фонового изображения */
+.header::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-image: url('https://avatars.mds.yandex.net/i?id=dc01e24dffc1f0d553551e1992776c5b_l-4855126-images-thumbs&n=13');
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+  filter: blur(4px) brightness(0.7);
+  -webkit-filter: blur(4px) brightness(0.7);
+  transform: scale(1.05);
+  z-index: -1;
+}
+
+/* Контент поверх фона */
+.header .logo,
+.header .header-search,
+.header .header-actions {
+  position: relative;
+  z-index: 2;
+}
+
+/* Логотип и текст должны быть белыми на тёмном фоне */
+.header .logo h1 {
+  background: none !important;
+  -webkit-text-fill-color: white !important;
+  color: white !important;
+  text-shadow: 0 2px 10px rgba(0, 0, 0, 0.5);
+}
+
+.header .logo h1 span {
+  background: none !important;
+  -webkit-text-fill-color: white !important;
+  color: white !important;
+}
+
+/* Иконки и кнопки — белые */
+.header .header-icon svg {
+  fill: white !important;
+}
+
+.header .header-icon .icon-label {
+  color: white !important;
+}
+
+.header .header-icon:hover svg {
+  fill: #27ae60 !important;
+}
+
+.header .header-icon:hover .icon-label {
+  color: #27ae60 !important;
+}
+
+.header-search {
+  background: rgba(255, 255, 255, 0.15) !important;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.header-search input {
+  color: white !important;
+}
+.header-search input::placeholder {
+  color: rgba(255, 255, 255, 0.7) !important;
+}
+.header-search input:focus {
+  color: white !important;
+}
+
+.header-search button {
+  background: rgba(255, 255, 255, 0.2) !important;
+}
+.header-search button:hover {
+  background: #27ae60 !important;
+}
+
+/* Кнопки входа и профиля */
+#authButtons .header-btn svg {
+  fill: white !important;
+}
+#authButtons .header-btn .icon-label {
+  color: white !important;
+}
+#authButtons .header-btn:hover svg {
+  fill: #27ae60 !important;
+}
+#authButtons .header-btn:hover .icon-label {
+  color: #27ae60 !important;
+}
+
+/* Кнопка админки */
+#adminLink {
+  background: rgba(52, 152, 219, 0.8) !important;
+  color: white !important;
+}
+#adminLink:hover {
+  background: #3498db !important;
+}
+
+/* Корзина */
+.header .badge {
+  background: #27ae60 !important;
+  color: white !important;
+}
+
+/* Бургер-кнопка */
+.burger-btn span {
+  background: white !important;
+}
+
+/* Адаптация для мобильных */
+@media (max-width: 768px) {
+  .header {
+    backdrop-filter: blur(15px);
+    -webkit-backdrop-filter: blur(15px);
+  }
+  .header::before {
+    filter: blur(6px) brightness(0.6);
+    -webkit-filter: blur(6px) brightness(0.6);
+  }
+}
