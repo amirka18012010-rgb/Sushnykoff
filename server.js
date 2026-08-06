@@ -35,14 +35,14 @@ app.use(session({
   cookie: { maxAge: 1000 * 60 * 60 * 24 }
 }));
 
-// ---- Multer (для загрузки файлов в память) ----
+// ---- Multer ----
 const storage = multer.memoryStorage();
 const upload = multer({
   storage,
-  limits: { fileSize: 5 * 1024 * 1024 } // 5 МБ
+  limits: { fileSize: 5 * 1024 * 1024 }
 });
 
-// ---- Вспомогательная функция для загрузки в Supabase Storage ----
+// ---- Вспомогательная функция для загрузки в Storage ----
 async function uploadToStorage(file, folder) {
   if (!file) return null;
   const fileExt = path.extname(file.originalname);
@@ -105,11 +105,45 @@ async function setCartToDB(userId, cart) {
   await supabase.from('cart_items').insert(items);
 }
 
+// ---- Функции для дополнительных категорий ----
+async function getProductCategories(productId) {
+  const { data, error } = await supabase
+    .from('product_categories')
+    .select('category_id')
+    .eq('product_id', productId);
+  if (error) return [];
+  return data.map(row => row.category_id);
+}
+
+async function setProductCategories(productId, categoryIds) {
+  await supabase.from('product_categories').delete().eq('product_id', productId);
+  if (categoryIds && categoryIds.length > 0) {
+    const items = categoryIds.map(catId => ({ product_id: productId, category_id: catId }));
+    await supabase.from('product_categories').insert(items);
+  }
+}
+
+async function getBrandCategories(brandId) {
+  const { data, error } = await supabase
+    .from('brand_categories')
+    .select('category_id')
+    .eq('brand_id', brandId);
+  if (error) return [];
+  return data.map(row => row.category_id);
+}
+
+async function setBrandCategories(brandId, categoryIds) {
+  await supabase.from('brand_categories').delete().eq('brand_id', brandId);
+  if (categoryIds && categoryIds.length > 0) {
+    const items = categoryIds.map(catId => ({ brand_id: brandId, category_id: catId }));
+    await supabase.from('brand_categories').insert(items);
+  }
+}
+
 // ============================================================
 // МАРШРУТЫ ДЛЯ ПУБЛИЧНОЙ ЧАСТИ
 // ============================================================
 
-// ---- Пинг (с логированием) ----
 app.get('/api/ping', (req, res) => {
   console.log(`✅ Пинг получен в ${new Date().toISOString()}`);
   res.send('ok');
@@ -129,15 +163,44 @@ app.get('/api/categories', async (req, res) => {
   }
 });
 
-// ---- 2. Бренды по категории ----
+// ---- 2. Бренды по категории (с учётом доп. категорий) ----
 app.get('/api/brands', async (req, res) => {
   try {
     const { categoryId } = req.query;
-    let query = supabase.from('brands').select('*');
-    if (categoryId) query = query.eq('category_id', categoryId);
-    const { data, error } = await query.order('name');
-    if (error) throw error;
-    res.json(data);
+    if (categoryId) {
+      // Основные бренды
+      const { data: mainBrands, error: err1 } = await supabase
+        .from('brands')
+        .select('*')
+        .eq('category_id', categoryId);
+      if (err1) throw err1;
+      // Дополнительные
+      const { data: extraBrands, error: err2 } = await supabase
+        .from('brand_categories')
+        .select('brand_id')
+        .eq('category_id', categoryId);
+      if (err2) throw err2;
+      const extraIds = extraBrands.map(row => row.brand_id);
+      let extraData = [];
+      if (extraIds.length) {
+        const { data: extra, error: err3 } = await supabase
+          .from('brands')
+          .select('*')
+          .in('id', extraIds);
+        if (err3) throw err3;
+        extraData = extra;
+      }
+      const all = [...mainBrands, ...extraData];
+      const unique = all.filter((v, i, a) => a.findIndex(b => b.id === v.id) === i);
+      res.json(unique);
+    } else {
+      const { data, error } = await supabase
+        .from('brands')
+        .select('*')
+        .order('name');
+      if (error) throw error;
+      res.json(data);
+    }
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -152,6 +215,8 @@ app.get('/api/brands/:id', async (req, res) => {
       .eq('id', req.params.id)
       .single();
     if (error) return res.status(404).json({ error: 'Бренд не найден' });
+    const extra = await getBrandCategories(req.params.id);
+    data.extra_category_ids = extra;
     res.json(data);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -182,7 +247,7 @@ app.get('/api/volumes', async (req, res) => {
   }
 });
 
-// ---- 5. Товары (фильтр, поиск, пагинация, сортировка) ----
+// ---- 5. Товары (фильтр, поиск, пагинация) с доп. категориями ----
 app.get('/api/products', async (req, res) => {
   try {
     const { brandId, volumeId, category, search, page = 1, limit = 12, sort = 'newest', ids } = req.query;
@@ -195,9 +260,31 @@ app.get('/api/products', async (req, res) => {
         volumes:volume_id(name)
       `);
 
+    if (category && category !== 'all') {
+      // Получаем товары с основной категорией
+      const { data: main, error: err1 } = await supabase
+        .from('products')
+        .select('id')
+        .eq('category_id', category);
+      if (err1) throw err1;
+      const mainIds = main.map(p => p.id);
+      // С доп. категорией
+      const { data: extra, error: err2 } = await supabase
+        .from('product_categories')
+        .select('product_id')
+        .eq('category_id', category);
+      if (err2) throw err2;
+      const extraIds = extra.map(p => p.product_id);
+      const allIds = [...new Set([...mainIds, ...extraIds])];
+      if (allIds.length) {
+        query = query.in('id', allIds);
+      } else {
+        return res.json({ items: [], total: 0, page: 1, totalPages: 0 });
+      }
+    }
+
     if (brandId) query = query.eq('brand_id', brandId);
     if (volumeId) query = query.eq('volume_id', volumeId);
-    if (category && category !== 'all') query = query.eq('category_id', category);
     if (search && search.trim() !== '') {
       const words = search.trim().split(/\s+/).filter(w => w.length > 0);
       const conditions = words.map(word => 
@@ -210,7 +297,6 @@ app.get('/api/products', async (req, res) => {
       if (idArray.length) query = query.in('id', idArray);
     }
 
-    // Сортировка
     if (sort === 'random') {
       query = query.order('id', { ascending: false });
     } else {
@@ -231,7 +317,7 @@ app.get('/api/products', async (req, res) => {
       volume_name: p.volumes?.name,
     }));
 
-    // Общее количество
+    // Подсчёт общего количества (без учёта доп. категорий для простоты)
     let countQuery = supabase.from('products').select('*', { count: 'exact', head: true });
     if (brandId) countQuery = countQuery.eq('brand_id', brandId);
     if (volumeId) countQuery = countQuery.eq('volume_id', volumeId);
@@ -274,6 +360,8 @@ app.get('/api/products/:id', async (req, res) => {
     data.category_name = data.categories?.name;
     data.brand_name = data.brands?.name;
     data.volume_name = data.volumes?.name;
+    const extra = await getProductCategories(req.params.id);
+    data.extra_category_ids = extra;
     res.json(data);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -427,22 +515,19 @@ app.get('/api/background', async (req, res) => {
   }
 });
 
-// ---- 13. Аутентификация (регистрация с номером телефона) ----
+// ---- 13. Аутентификация ----
 app.post('/api/auth/register', async (req, res) => {
   try {
     const { firstName, lastName, login, password, phone } = req.body;
     if (!firstName || !lastName || !login || !password) {
       return res.status(400).json({ error: 'Заполните все обязательные поля' });
     }
-
-    // Проверяем, не занят ли логин
     const { data: existing } = await supabase
       .from('users')
       .select('id')
       .eq('login', login)
       .single();
     if (existing) return res.status(400).json({ error: 'Логин уже занят' });
-
     const hashed = await bcrypt.hash(password, 10);
     const { data, error } = await supabase
       .from('users')
@@ -455,15 +540,12 @@ app.post('/api/auth/register', async (req, res) => {
       })
       .select('id');
     if (error) throw error;
-
     req.session.userId = data[0].id;
     res.json({ success: true, userId: data[0].id });
   } catch (err) {
-    console.error('Ошибка регистрации:', err);
     res.status(500).json({ error: 'Ошибка регистрации' });
   }
 });
-
 app.post('/api/auth/login', async (req, res) => {
   try {
     const { login, password } = req.body;
@@ -752,7 +834,6 @@ app.put('/api/admin/settings', async (req, res) => {
   }
 });
 
-// ---- ВХОД В АДМИНКУ (из .env) ----
 app.post('/api/admin/login', (req, res) => {
   try {
     const { login, password } = req.body;
@@ -778,7 +859,7 @@ app.get('/api/admin/status', (req, res) => {
   res.json({ isAdmin: !!req.session.isAdmin });
 });
 
-// ---- Админ: товары ----
+// ---- Админ: товары (с доп. категориями) ----
 app.get('/api/admin/products', async (req, res) => {
   try {
     if (!isAdmin(req)) return res.status(403).json({ error: 'Доступ запрещён' });
@@ -792,12 +873,17 @@ app.get('/api/admin/products', async (req, res) => {
       `)
       .order('id', { ascending: false });
     if (error) throw error;
-    const items = data.map(p => ({
-      ...p,
-      category_name: p.categories?.name,
-      brand_name: p.brands?.name,
-      volume_name: p.volumes?.name,
-    }));
+    const items = [];
+    for (const p of data) {
+      const extra = await getProductCategories(p.id);
+      items.push({
+        ...p,
+        category_name: p.categories?.name,
+        brand_name: p.brands?.name,
+        volume_name: p.volumes?.name,
+        extra_category_ids: extra,
+      });
+    }
     res.json(items);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -807,7 +893,7 @@ app.get('/api/admin/products', async (req, res) => {
 app.post('/api/admin/products', upload.single('image'), async (req, res) => {
   try {
     if (!isAdmin(req)) return res.status(403).json({ error: 'Доступ запрещён' });
-    const { name, price, category_id, brand_id, volume_id, imageUrl, description, wholesale_price } = req.body;
+    const { name, price, category_id, brand_id, volume_id, imageUrl, description, wholesale_price, extra_category_ids } = req.body;
     let image = '';
     if (req.file) {
       const publicUrl = await uploadToStorage(req.file, 'products');
@@ -832,8 +918,12 @@ app.post('/api/admin/products', upload.single('image'), async (req, res) => {
       })
       .select('id');
     if (error) throw error;
+    const productId = data[0].id;
+    if (extra_category_ids && Array.isArray(extra_category_ids)) {
+      await setProductCategories(productId, extra_category_ids);
+    }
     await supabase.from('notifications').insert({ message: 'Добавлен новый товар: ' + name });
-    res.json({ id: data[0].id });
+    res.json({ id: productId });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -843,7 +933,7 @@ app.put('/api/admin/products/:id', upload.single('image'), async (req, res) => {
   try {
     if (!isAdmin(req)) return res.status(403).json({ error: 'Доступ запрещён' });
     const id = req.params.id;
-    const { name, price, category_id, brand_id, volume_id, imageUrl, description, wholesale_price } = req.body;
+    const { name, price, category_id, brand_id, volume_id, imageUrl, description, wholesale_price, extra_category_ids } = req.body;
     let image = '';
     if (req.file) {
       const publicUrl = await uploadToStorage(req.file, 'products');
@@ -868,6 +958,11 @@ app.put('/api/admin/products/:id', upload.single('image'), async (req, res) => {
       })
       .eq('id', id);
     if (error) throw error;
+    if (extra_category_ids && Array.isArray(extra_category_ids)) {
+      await setProductCategories(id, extra_category_ids);
+    } else {
+      await setProductCategories(id, []);
+    }
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -877,6 +972,7 @@ app.put('/api/admin/products/:id', upload.single('image'), async (req, res) => {
 app.delete('/api/admin/products/:id', async (req, res) => {
   try {
     if (!isAdmin(req)) return res.status(403).json({ error: 'Доступ запрещён' });
+    await supabase.from('product_categories').delete().eq('product_id', req.params.id);
     const { error } = await supabase.from('products').delete().eq('id', req.params.id);
     if (error) throw error;
     res.json({ success: true });
@@ -957,7 +1053,7 @@ app.delete('/api/admin/categories/:id', async (req, res) => {
   }
 });
 
-// ---- Админ: бренды ----
+// ---- Админ: бренды (с доп. категориями) ----
 app.get('/api/admin/brands', async (req, res) => {
   try {
     if (!isAdmin(req)) return res.status(403).json({ error: 'Доступ запрещён' });
@@ -969,10 +1065,15 @@ app.get('/api/admin/brands', async (req, res) => {
       `)
       .order('name');
     if (error) throw error;
-    const items = data.map(b => ({
-      ...b,
-      category_name: b.categories?.name,
-    }));
+    const items = [];
+    for (const b of data) {
+      const extra = await getBrandCategories(b.id);
+      items.push({
+        ...b,
+        category_name: b.categories?.name,
+        extra_category_ids: extra,
+      });
+    }
     res.json(items);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -982,7 +1083,7 @@ app.get('/api/admin/brands', async (req, res) => {
 app.post('/api/admin/brands', upload.single('image'), async (req, res) => {
   try {
     if (!isAdmin(req)) return res.status(403).json({ error: 'Доступ запрещён' });
-    const { name, description, category_id, imageUrl } = req.body;
+    const { name, description, category_id, imageUrl, extra_category_ids } = req.body;
     let image = '';
     if (req.file) {
       const publicUrl = await uploadToStorage(req.file, 'brands');
@@ -996,7 +1097,11 @@ app.post('/api/admin/brands', upload.single('image'), async (req, res) => {
       .insert({ name, description: description || '', image, category_id })
       .select('id');
     if (error) throw error;
-    res.json({ id: data[0].id });
+    const brandId = data[0].id;
+    if (extra_category_ids && Array.isArray(extra_category_ids)) {
+      await setBrandCategories(brandId, extra_category_ids);
+    }
+    res.json({ id: brandId });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -1006,7 +1111,7 @@ app.put('/api/admin/brands/:id', upload.single('image'), async (req, res) => {
   try {
     if (!isAdmin(req)) return res.status(403).json({ error: 'Доступ запрещён' });
     const id = req.params.id;
-    const { name, description, category_id, imageUrl } = req.body;
+    const { name, description, category_id, imageUrl, extra_category_ids } = req.body;
     let image = '';
     if (req.file) {
       const publicUrl = await uploadToStorage(req.file, 'brands');
@@ -1022,6 +1127,11 @@ app.put('/api/admin/brands/:id', upload.single('image'), async (req, res) => {
       .update({ name, description: description || '', image, category_id })
       .eq('id', id);
     if (error) throw error;
+    if (extra_category_ids && Array.isArray(extra_category_ids)) {
+      await setBrandCategories(id, extra_category_ids);
+    } else {
+      await setBrandCategories(id, []);
+    }
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -1031,6 +1141,7 @@ app.put('/api/admin/brands/:id', upload.single('image'), async (req, res) => {
 app.delete('/api/admin/brands/:id', async (req, res) => {
   try {
     if (!isAdmin(req)) return res.status(403).json({ error: 'Доступ запрещён' });
+    await supabase.from('brand_categories').delete().eq('brand_id', req.params.id);
     const { error } = await supabase.from('brands').delete().eq('id', req.params.id);
     if (error) throw error;
     res.json({ success: true });
@@ -1094,7 +1205,58 @@ app.delete('/api/admin/volumes/:id', async (req, res) => {
   }
 });
 
-// ---- Админ: пользователи (с телефоном) ----
+// ---- Админ: заказы ----
+app.get('/api/admin/orders', async (req, res) => {
+  try {
+    if (!isAdmin(req)) return res.status(403).json({ error: 'Доступ запрещён' });
+    const { data, error } = await supabase
+      .from('orders')
+      .select(`
+        *,
+        users:user_id(first_name, last_name, login)
+      `)
+      .order('created_at', { ascending: false });
+    if (error) throw error;
+    const items = data.map(o => ({
+      ...o,
+      first_name: o.users?.first_name,
+      last_name: o.users?.last_name,
+      login: o.users?.login,
+    }));
+    res.json(items);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.put('/api/admin/orders/:id', async (req, res) => {
+  try {
+    if (!isAdmin(req)) return res.status(403).json({ error: 'Доступ запрещён' });
+    const { status } = req.body;
+    if (!status) return res.status(400).json({ error: 'Укажите статус' });
+    const { data: order } = await supabase.from('orders').select('user_id').eq('id', req.params.id).single();
+    if (!order) return res.status(404).json({ error: 'Заказ не найден' });
+    const { error } = await supabase
+      .from('orders')
+      .update({ status })
+      .eq('id', req.params.id);
+    if (error) throw error;
+    const statusMap = {
+      pending: 'ожидает подтверждения',
+      paid: 'оплачен',
+      shipped: 'отправлен',
+      delivered: 'доставлен'
+    };
+    const statusText = statusMap[status] || status;
+    const message = `📦 Статус заказа №${req.params.id} изменён на «${statusText}»`;
+    await supabase.from('notifications').insert({ message });
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ---- Админ: пользователи ----
 app.get('/api/admin/users', async (req, res) => {
   try {
     if (!isAdmin(req)) return res.status(403).json({ error: 'Доступ запрещён' });
@@ -1184,60 +1346,6 @@ app.delete('/api/admin/news/:id', async (req, res) => {
     if (!isAdmin(req)) return res.status(403).json({ error: 'Доступ запрещён' });
     const { error } = await supabase.from('news').delete().eq('id', req.params.id);
     if (error) throw error;
-    res.json({ success: true });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// ---- Админ: заказы ----
-app.get('/api/admin/orders', async (req, res) => {
-  try {
-    if (!isAdmin(req)) return res.status(403).json({ error: 'Доступ запрещён' });
-    const { data, error } = await supabase
-      .from('orders')
-      .select(`
-        *,
-        users:user_id(first_name, last_name, login)
-      `)
-      .order('created_at', { ascending: false });
-    if (error) throw error;
-    const items = data.map(o => ({
-      ...o,
-      first_name: o.users?.first_name,
-      last_name: o.users?.last_name,
-      login: o.users?.login,
-    }));
-    res.json(items);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-app.put('/api/admin/orders/:id', async (req, res) => {
-  try {
-    if (!isAdmin(req)) return res.status(403).json({ error: 'Доступ запрещён' });
-    const { status } = req.body;
-    if (!status) return res.status(400).json({ error: 'Укажите статус' });
-    const { data: order } = await supabase.from('orders').select('user_id').eq('id', req.params.id).single();
-    if (!order) return res.status(404).json({ error: 'Заказ не найден' });
-
-    const { error } = await supabase
-      .from('orders')
-      .update({ status })
-      .eq('id', req.params.id);
-    if (error) throw error;
-
-    const statusMap = {
-      pending: 'ожидает подтверждения',
-      paid: 'оплачен',
-      shipped: 'отправлен',
-      delivered: 'доставлен'
-    };
-    const statusText = statusMap[status] || status;
-    const message = `📦 Статус заказа №${req.params.id} изменён на «${statusText}»`;
-    await supabase.from('notifications').insert({ message });
-
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
