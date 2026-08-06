@@ -148,7 +148,7 @@
       <div id="brandList"></div>
     </div>
 
-    <!-- Вкладка: Объёмы -->
+    <!-- Остальные вкладки -->
     <div id="tab-volumes" class="tab-content">
       <h3 style="margin-bottom:16px;">Управление объёмами</h3>
       <form id="volumeForm" class="admin-form">
@@ -160,19 +160,16 @@
       <div id="volumeList"></div>
     </div>
 
-    <!-- Вкладка: Заказы -->
     <div id="tab-orders" class="tab-content">
       <h3 style="margin-bottom:16px;">Список заказов</h3>
       <div id="ordersList"></div>
     </div>
 
-    <!-- Вкладка: Пользователи -->
     <div id="tab-users" class="tab-content">
       <h3 style="margin-bottom:16px;">Список пользователей</h3>
       <div id="usersList"></div>
     </div>
 
-    <!-- Вкладка: Новости -->
     <div id="tab-news" class="tab-content">
       <h3 style="margin-bottom:16px;">Управление новостями</h3>
       <form id="newsForm" class="admin-form">
@@ -185,7 +182,6 @@
       <div id="newsList"></div>
     </div>
 
-    <!-- Вкладка: Настройки -->
     <div id="tab-settings" class="tab-content">
       <h3 style="margin-bottom:16px;">Настройки сайта</h3>
       <form id="settingsForm" class="admin-form">
@@ -199,7 +195,6 @@
       <div id="settingsMessage" style="margin-top:10px;"></div>
     </div>
 
-    <!-- Вкладка: Дизайн -->
     <div id="tab-design" class="tab-content">
       <h3 style="margin-bottom:16px;">Настройка фона сайта</h3>
       <div class="admin-form">
@@ -272,7 +267,6 @@
     }
   }
 
-  // ---- Функция обновления отображения выбранных доп. категорий ----
   function updateExtraCategoriesDisplay(selectId, displayId) {
     const select = document.getElementById(selectId);
     const display = document.getElementById(displayId);
@@ -285,7 +279,6 @@
     }
   }
 
-  // ---- Инициализация отображения и обработчики ----
   function initExtraCategoriesDisplay() {
     const selects = [
       { selectId: 'productExtraCategories', displayId: 'productExtraCategoriesDisplay' },
@@ -297,7 +290,6 @@
         select.addEventListener('change', function() {
           updateExtraCategoriesDisplay(selectId, displayId);
         });
-        // Инициализация
         setTimeout(() => updateExtraCategoriesDisplay(selectId, displayId), 100);
       }
     });
@@ -319,7 +311,6 @@
             sel.appendChild(opt);
           });
         });
-        // После заполнения обновить отображение
         setTimeout(initExtraCategoriesDisplay, 50);
       });
   }
@@ -402,7 +393,6 @@
     loadNewsAdmin();
   }
 
-  // ---- Загрузка категорий в селекты ----
   function loadCategoriesSelect() {
     fetch('/api/admin/categories')
       .then(r => r.json())
@@ -454,7 +444,6 @@
       .catch(err => console.error('Ошибка загрузки объёмов:', err));
   }
 
-  // ---- Товары (админ) ----
   function loadProductsAdmin() {
     fetch('/api/admin/products')
       .then(r => r.json())
@@ -499,15 +488,15 @@
               document.getElementById('productDescription').value = product.description || '';
               document.getElementById('formSubmitBtn').textContent = '💾 Сохранить изменения';
               const extraSelect = document.getElementById('productExtraCategories');
-              if (product.extra_category_ids) {
+              if (product.extra_category_ids && product.extra_category_ids.length) {
                 Array.from(extraSelect.options).forEach(opt => {
                   opt.selected = product.extra_category_ids.includes(parseInt(opt.value));
                 });
               } else {
                 extraSelect.selectedIndex = -1;
               }
+              setTimeout(() => updateExtraCategoriesDisplay('productExtraCategories', 'productExtraCategoriesDisplay'), 50);
               setTimeout(setupAllPreviews, 100);
-              setTimeout(() => updateExtraCategoriesDisplay('productExtraCategories', 'productExtraCategoriesDisplay'), 150);
             }
           });
         });
@@ -516,7 +505,10 @@
             if (confirm('Удалить товар?')) {
               const id = parseInt(btn.dataset.id);
               fetch(`/api/admin/products/${id}`, { method: 'DELETE' })
-                .then(() => loadProductsAdmin());
+                .then(() => {
+                  clearClientCache(null);
+                  loadProductsAdmin();
+                });
             }
           });
         });
@@ -555,6 +547,7 @@
       .then(data => {
         if (data.error) alert(data.error);
         else {
+          clearClientCache(null);
           loadProductsAdmin();
           document.getElementById('productForm').reset();
           document.getElementById('editId').value = '';
@@ -565,7 +558,6 @@
       });
   });
 
-  // ---- Категории (админ) ----
   function loadCategoriesAdmin() {
     fetch('/api/admin/categories')
       .then(r => r.json())
@@ -639,20 +631,19 @@
       .then(data => {
         if (data.error) alert(data.error);
         else {
+          clearClientCache('categories');
           loadCategoriesAdmin();
           loadCategoriesSelect();
           populateExtraCategorySelects();
           this.reset();
           document.getElementById('editCategoryId').value = '';
           document.getElementById('categorySubmitBtn').textContent = '➕ Добавить категорию';
-          clearClientCache('categories');
           setTimeout(setupAllPreviews, 100);
         }
       })
       .catch(err => alert('Ошибка: ' + err.message));
   });
 
-  // ---- Бренды (админ) ----
   function loadBrandsAdmin() {
     fetch('/api/admin/brands')
       .then(r => r.json())
@@ -692,15 +683,15 @@
               document.getElementById('brandImageUrl').value = brand.image || '';
               document.getElementById('brandSubmitBtn').textContent = '💾 Сохранить';
               const extraSelect = document.getElementById('brandExtraCategories');
-              if (brand.extra_category_ids) {
+              if (brand.extra_category_ids && brand.extra_category_ids.length) {
                 Array.from(extraSelect.options).forEach(opt => {
                   opt.selected = brand.extra_category_ids.includes(parseInt(opt.value));
                 });
               } else {
                 extraSelect.selectedIndex = -1;
               }
+              setTimeout(() => updateExtraCategoriesDisplay('brandExtraCategories', 'brandExtraCategoriesDisplay'), 50);
               setTimeout(setupAllPreviews, 100);
-              setTimeout(() => updateExtraCategoriesDisplay('brandExtraCategories', 'brandExtraCategoriesDisplay'), 150);
             }
           });
         });
@@ -710,6 +701,7 @@
               const id = parseInt(btn.dataset.id);
               fetch(`/api/admin/brands/${id}`, { method: 'DELETE' })
                 .then(() => {
+                  clearClientCache(null);
                   loadBrandsAdmin();
                   loadCategoriesSelect();
                 });
@@ -743,6 +735,7 @@
       .then(data => {
         if (data.error) alert(data.error);
         else {
+          clearClientCache(null);
           loadBrandsAdmin();
           document.getElementById('brandForm').reset();
           document.getElementById('editBrandId').value = '';
