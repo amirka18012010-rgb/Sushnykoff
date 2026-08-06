@@ -62,8 +62,8 @@
       </div>
     </header>
 
-    <!-- Товары -->
     <div id="tab-products" class="tab-content active">
+      <!-- форма товаров -->
       <form id="productForm" class="admin-form" enctype="multipart/form-data">
         <input type="hidden" id="editId" value="">
         <div><label>Название *</label><input type="text" id="productName" required></div>
@@ -79,8 +79,8 @@
       <div id="adminProductList"></div>
     </div>
 
-    <!-- Категории -->
     <div id="tab-categories" class="tab-content">
+      <!-- форма категорий -->
       <h3 style="margin-bottom:16px;">Управление категориями</h3>
       <form id="categoryForm" class="admin-form" enctype="multipart/form-data">
         <div class="full-width">
@@ -96,8 +96,8 @@
       <div id="categoryList"></div>
     </div>
 
-    <!-- Бренды -->
     <div id="tab-brands" class="tab-content">
+      <!-- форма брендов -->
       <h3 style="margin-bottom:16px;">Управление брендами</h3>
       <form id="brandForm" class="admin-form" enctype="multipart/form-data">
         <input type="hidden" id="editBrandId">
@@ -110,7 +110,6 @@
       <div id="brandList"></div>
     </div>
 
-    <!-- Объёмы -->
     <div id="tab-volumes" class="tab-content">
       <h3 style="margin-bottom:16px;">Управление объёмами</h3>
       <form id="volumeForm" class="admin-form">
@@ -122,20 +121,19 @@
       <div id="volumeList"></div>
     </div>
 
-    <!-- Заказы -->
     <div id="tab-orders" class="tab-content">
       <h3 style="margin-bottom:16px;">Список заказов</h3>
       <div id="ordersList"></div>
     </div>
 
-    <!-- Пользователи -->
+    <!-- ПОЛЬЗОВАТЕЛИ (с телефоном) -->
     <div id="tab-users" class="tab-content">
       <h3 style="margin-bottom:16px;">Список пользователей</h3>
       <div id="usersList"></div>
     </div>
 
-    <!-- Новости -->
     <div id="tab-news" class="tab-content">
+      <!-- форма новостей -->
       <h3 style="margin-bottom:16px;">Управление новостями</h3>
       <form id="newsForm" class="admin-form">
         <div class="full-width"><label>Заголовок</label><input type="text" id="newsTitle" required></div>
@@ -147,7 +145,6 @@
       <div id="newsList"></div>
     </div>
 
-    <!-- Настройки -->
     <div id="tab-settings" class="tab-content">
       <h3 style="margin-bottom:16px;">Настройки сайта</h3>
       <form id="settingsForm" class="admin-form">
@@ -161,7 +158,6 @@
       <div id="settingsMessage" style="margin-top:10px;"></div>
     </div>
 
-    <!-- Дизайн -->
     <div id="tab-design" class="tab-content">
       <h3 style="margin-bottom:16px;">Настройка фона сайта</h3>
       <div class="admin-form">
@@ -176,7 +172,7 @@
 </div>
 
 <script>
-  // ===== ПОЛНЫЙ СКРИПТ АДМИНКИ =====
+  // ===== ПОЛНЫЙ СКРИПТ АДМИНКИ (с телефоном пользователей) =====
   const loginDiv = document.getElementById('adminLogin');
   const panelDiv = document.getElementById('adminPanel');
   const loginBtn = document.getElementById('loginBtn');
@@ -471,10 +467,8 @@
     formData.append('icon', icon);
     formData.append('imageUrl', imageUrl);
     if (imageFile) formData.append('categoryImage', imageFile);
-
     const url = id ? `/api/admin/categories/${id}` : '/api/admin/categories';
     const method = id ? 'PUT' : 'POST';
-
     fetch(url, { method, body: formData })
       .then(r => r.json())
       .then(data => {
@@ -494,7 +488,6 @@
       });
   });
 
-  // ----- Остальные функции (brands, volumes, orders, users, news, settings, design) -----
   function loadBrandsAdmin() {
     fetch('/api/admin/brands')
       .then(r => r.json())
@@ -694,6 +687,7 @@
       });
   }
 
+  // ===== ПОЛЬЗОВАТЕЛИ (с телефоном) =====
   function loadUsersAdmin() {
     fetch('/api/admin/users')
       .then(r => r.json())
@@ -709,6 +703,7 @@
               <div class="item-info">
                 <span class="name">${u.first_name} ${u.last_name}</span>
                 <span class="meta">${u.login}</span>
+                <span class="meta">📞 ${u.phone || 'Не указан'}</span>
                 <span class="meta">${u.is_blocked ? '🔒 Заблокирован' : '✅ Активен'}</span>
                 <span class="meta">Зарегистрирован: ${new Date(u.created_at).toLocaleDateString()}</span>
               </div>

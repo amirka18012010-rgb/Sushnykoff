@@ -427,31 +427,43 @@ app.get('/api/background', async (req, res) => {
   }
 });
 
-// ---- 13. Аутентификация пользователей ----
+// ---- 13. Аутентификация (регистрация с номером телефона) ----
 app.post('/api/auth/register', async (req, res) => {
   try {
-    const { firstName, lastName, login, password } = req.body;
+    const { firstName, lastName, login, password, phone } = req.body;
     if (!firstName || !lastName || !login || !password) {
-      return res.status(400).json({ error: 'Заполните все поля' });
+      return res.status(400).json({ error: 'Заполните все обязательные поля' });
     }
+
+    // Проверяем, не занят ли логин
     const { data: existing } = await supabase
       .from('users')
       .select('id')
       .eq('login', login)
       .single();
     if (existing) return res.status(400).json({ error: 'Логин уже занят' });
+
     const hashed = await bcrypt.hash(password, 10);
     const { data, error } = await supabase
       .from('users')
-      .insert({ first_name: firstName, last_name: lastName, login, password: hashed })
+      .insert({
+        first_name: firstName,
+        last_name: lastName,
+        login,
+        password: hashed,
+        phone: phone || null,
+      })
       .select('id');
     if (error) throw error;
+
     req.session.userId = data[0].id;
     res.json({ success: true, userId: data[0].id });
   } catch (err) {
+    console.error('Ошибка регистрации:', err);
     res.status(500).json({ error: 'Ошибка регистрации' });
   }
 });
+
 app.post('/api/auth/login', async (req, res) => {
   try {
     const { login, password } = req.body;
@@ -724,7 +736,7 @@ app.delete('/api/orders/history', async (req, res) => {
 });
 
 // ============================================================
-// АДМИН-МАРШРУТЫ (с проверкой isAdmin)
+// АДМИН-МАРШРУТЫ
 // ============================================================
 
 app.put('/api/admin/settings', async (req, res) => {
@@ -740,7 +752,7 @@ app.put('/api/admin/settings', async (req, res) => {
   }
 });
 
-// ===== ВХОД В АДМИНКУ (из переменных окружения) =====
+// ---- ВХОД В АДМИНКУ (из .env) ----
 app.post('/api/admin/login', (req, res) => {
   try {
     const { login, password } = req.body;
@@ -756,7 +768,6 @@ app.post('/api/admin/login', (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
-// ===================================================
 
 app.post('/api/admin/logout', (req, res) => {
   req.session.destroy();
@@ -874,7 +885,7 @@ app.delete('/api/admin/products/:id', async (req, res) => {
   }
 });
 
-// ---- Админ: категории (исправленный) ----
+// ---- Админ: категории ----
 app.get('/api/admin/categories', async (req, res) => {
   try {
     if (!isAdmin(req)) return res.status(403).json({ error: 'Доступ запрещён' });
@@ -905,7 +916,6 @@ app.post('/api/admin/categories', upload.single('categoryImage'), async (req, re
     if (error) throw error;
     res.json({ id: data[0].id });
   } catch (err) {
-    console.error('Ошибка добавления категории:', err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -1084,13 +1094,13 @@ app.delete('/api/admin/volumes/:id', async (req, res) => {
   }
 });
 
-// ---- Админ: пользователи ----
+// ---- Админ: пользователи (с телефоном) ----
 app.get('/api/admin/users', async (req, res) => {
   try {
     if (!isAdmin(req)) return res.status(403).json({ error: 'Доступ запрещён' });
     const { data, error } = await supabase
       .from('users')
-      .select('id, first_name, last_name, login, is_blocked, created_at')
+      .select('id, first_name, last_name, login, is_blocked, created_at, phone')
       .order('id', { ascending: false });
     if (error) throw error;
     res.json(data);

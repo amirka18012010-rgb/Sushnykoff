@@ -86,6 +86,7 @@
 </div>
 
 <!-- ===== МОДАЛКИ ===== -->
+
 <!-- ВХОД -->
 <div class="auth-overlay" id="loginOverlay">
   <div class="auth-panel">
@@ -125,7 +126,7 @@
   </div>
 </div>
 
-<!-- РЕГИСТРАЦИЯ -->
+<!-- РЕГИСТРАЦИЯ (с полем телефона) -->
 <div class="auth-overlay" id="registerOverlay">
   <div class="auth-panel">
     <div class="auth-header">
@@ -137,6 +138,7 @@
       <input type="text" id="regLastName" placeholder="Фамилия" required autocomplete="off">
       <input type="text" id="regLogin" placeholder="Логин" required autocomplete="off">
       <input type="password" id="regPassword" placeholder="Пароль" required autocomplete="off">
+      <input type="text" id="regPhone" placeholder="Номер телефона (необязательно)" autocomplete="off" style="margin-top:8px;">
       <button type="submit">Зарегистрироваться</button>
     </form>
     <div id="registerError" style="color:red; margin-top:10px;"></div>
