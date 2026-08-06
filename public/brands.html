@@ -2,7 +2,9 @@
 <html lang="ru">
 <head>
   <meta charset="UTF-8">
+  <title>Бренды и товары — Sushnykoff | Доставка воды в Нальчике</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="Вода из категории с доставкой по Нальчику. Магазин на Дубках 2/172. Быстрая доставка.">
   <title>Бренды и товары — Sushnykoff</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -90,14 +92,20 @@
   <h2 class="page-title" id="categoryTitle">Бренды и товары</h2>
 
   <!-- Поиск и сортировка -->
-  <div class="filter-section">
+<!-- Поиск и сортировка -->
+<div class="filter-section">
+  <form autocomplete="off" onsubmit="return false;" style="display:flex; flex:1; gap:12px; flex-wrap:wrap; align-items:center; width:100%;">
+    <!-- Скрытые поля для отвлечения браузера -->
+    <input type="text" style="display:none;" name="fake-username" autocomplete="off">
+    <input type="password" style="display:none;" name="fake-password" autocomplete="off">
     <input type="text" id="brandsSearchInput" placeholder="🔍 Поиск по товарам категории..." style="flex:1; min-width:200px; padding:10px 20px; border:2px solid rgba(255,255,255,0.3); border-radius:30px; outline:none; font-size:15px; background:rgba(255,255,255,0.5); backdrop-filter:blur(5px); transition: border-color 0.3s, box-shadow 0.3s;" autocomplete="off">
     <select id="sortSelect" style="padding:10px 20px; border-radius:30px; border:2px solid rgba(255,255,255,0.3); background:rgba(255,255,255,0.5); backdrop-filter:blur(5px); font-size:15px; outline:none; cursor:pointer;">
       <option value="newest">Сначала новые</option>
       <option value="random">Перемешать</option>
     </select>
-    <button class="reset-btn" id="brandsResetSearchBtn">Сбросить</button>
-  </div>
+    <button class="reset-btn" id="brandsResetSearchBtn" type="button">Сбросить</button>
+  </form>
+</div>
 
   <!-- Бренды -->
   <div id="brandsGrid" class="brands-grid"></div>

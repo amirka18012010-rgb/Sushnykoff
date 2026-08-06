@@ -70,6 +70,36 @@ function debounce(func, wait) {
 }
 
 // ============================================================
+// SEO-ФУНКЦИЯ
+// ============================================================
+function updateSEO(data) {
+  let title = 'Sushnykoff — доставка воды в Нальчике';
+  let description = 'Питьевая вода с доставкой на дом. Широкий ассортимент, низкие цены. Дубки 2/172, рынок.';
+  
+  if (data.pageType === 'brands' && data.categoryName) {
+    title = `${data.categoryName} — купить в Нальчике | Sushnykoff`;
+    description = `Вода категории "${data.categoryName}" с доставкой по Нальчику. Магазин на Дубках 2/172. Быстрая доставка.`;
+  } else if (data.pageType === 'brand' && data.brandName) {
+    title = `${data.brandName} — вода в Нальчике | Sushnykoff`;
+    description = `Вода бренда "${data.brandName}" с доставкой на дом. Склад на Дубках 2/172. Заказывайте воду Инна и другие бренды.`;
+  } else if (data.pageType === 'product' && data.productName) {
+    title = `${data.productName} — купить с доставкой в Нальчике | Sushnykoff`;
+    description = `${data.productName} по выгодной цене. Доставка воды по Нальчику. Магазин на Дубках 2/172.`;
+  }
+  
+  document.title = title;
+  const metaDesc = document.querySelector('meta[name="description"]');
+  if (metaDesc) {
+    metaDesc.setAttribute('content', description);
+  } else {
+    const newMeta = document.createElement('meta');
+    newMeta.name = 'description';
+    newMeta.content = description;
+    document.head.appendChild(newMeta);
+  }
+}
+
+// ============================================================
 // DOM-ЭЛЕМЕНТЫ
 // ============================================================
 const productsGrid = document.getElementById('productsGrid');
@@ -276,6 +306,10 @@ function loadBrands(categoryId) {
       if (titleEl && cat) {
         titleEl.textContent = `Бренды и товары в категории «${cat.name}»`;
       }
+      // SEO
+      if (cat) {
+        updateSEO({ pageType: 'brands', categoryName: cat.name });
+      }
     });
   fetch(`/api/brands?categoryId=${categoryId}`)
     .then(res => res.json())
@@ -419,6 +453,8 @@ function loadBrand(brandId) {
       document.getElementById('brandDescription').textContent = brand.description || '';
       document.getElementById('brandImage').src = brand.image || '';
       document.title = brand.name + ' — Sushnykoff';
+      // SEO
+      updateSEO({ pageType: 'brand', brandName: brand.name });
     });
 }
 
@@ -502,7 +538,7 @@ function renderProducts() {
     }
     return `
     <div class="product-card" data-id="${p.id}">
-      <img class="product-img" src="${p.image || 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="100" height="100"%3E%3Crect width="100" height="100" fill="%23f0f2f5"/%3E%3Ctext x="50" y="55" text-anchor="middle" font-size="40" dy=".35em"%3E🥤%3C/text%3E%3C/svg%3E'}" alt="${p.name}" loading="lazy">
+      <img class="product-img" src="${p.image || 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="100" height="100"%3E%3Crect width="100" height="100" fill="%23f0f2f5"/%3E%3Ctext x="50" y="55" text-anchor="middle" font-size="40" dy=".35em"%3E🥤%3C/text%3E%3C/svg%3E'}" alt="${p.name} ${p.brand_name ? ' - ' + p.brand_name : ''}" loading="lazy">
       <div class="product-info">
         <div class="name">${p.name}</div>
         <div class="price-block">${priceHtml}</div>
@@ -628,7 +664,7 @@ function renderFavoritesProducts(favProducts) {
     }
     return `
     <div class="product-card" data-id="${p.id}">
-      <img class="product-img" src="${p.image || 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="100" height="100"%3E%3Crect width="100" height="100" fill="%23f0f2f5"/%3E%3Ctext x="50" y="55" text-anchor="middle" font-size="40" dy=".35em"%3E🥤%3C/text%3E%3C/svg%3E'}" alt="${p.name}" loading="lazy">
+      <img class="product-img" src="${p.image || 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="100" height="100"%3E%3Crect width="100" height="100" fill="%23f0f2f5"/%3E%3Ctext x="50" y="55" text-anchor="middle" font-size="40" dy=".35em"%3E🥤%3C/text%3E%3C/svg%3E'}" alt="${p.name} ${p.brand_name ? ' - ' + p.brand_name : ''}" loading="lazy">
       <div class="product-info">
         <div class="name">${p.name}</div>
         <div class="price-block">${priceHtml}</div>
@@ -1054,7 +1090,7 @@ const regLastName = document.getElementById('regLastName');
 const regLogin = document.getElementById('regLogin');
 const regPassword = document.getElementById('regPassword');
 const registerError = document.getElementById('registerError');
-const regPhone = document.getElementById('regPhone'); // добавляем поле
+const regPhone = document.getElementById('regPhone');
 
 if (registerBtn) {
   registerBtn.addEventListener('click', () => {
@@ -1110,7 +1146,112 @@ if (logoutBtn) {
 }
 
 // ---- Восстановление (без изменений) ----
-// ... (код восстановления остаётся прежним, я опускаю его для краткости, но он есть в полном файле)
+const forgotLoginBtn = document.getElementById('forgotLoginBtn');
+const forgotPasswordBtn = document.getElementById('forgotPasswordBtn');
+const recoverOverlay = document.getElementById('recoverOverlay');
+const closeRecoverBtn = document.getElementById('closeRecoverBtn');
+const recoverFirstName = document.getElementById('recoverFirstName');
+const recoverLastName = document.getElementById('recoverLastName');
+const recoverSearchBtn = document.getElementById('recoverSearchBtn');
+const recoverStep1 = document.getElementById('recoverStep1');
+const recoverStep2 = document.getElementById('recoverStep2');
+const recoveredLogin = document.getElementById('recoveredLogin');
+const recoverNewPassword = document.getElementById('recoverNewPassword');
+const recoverResetBtn = document.getElementById('recoverResetBtn');
+const recoverMessage = document.getElementById('recoverMessage');
+const recoverError = document.getElementById('recoverError');
+
+if (forgotLoginBtn) {
+  forgotLoginBtn.addEventListener('click', () => {
+    if (loginOverlayElem) loginOverlayElem.classList.remove('open');
+    if (recoverOverlay) recoverOverlay.classList.add('open');
+    if (recoverStep1) recoverStep1.style.display = 'block';
+    if (recoverStep2) recoverStep2.style.display = 'none';
+    if (recoverMessage) recoverMessage.textContent = '';
+    if (recoverError) recoverError.textContent = '';
+  });
+}
+if (forgotPasswordBtn) {
+  forgotPasswordBtn.addEventListener('click', () => {
+    if (loginOverlayElem) loginOverlayElem.classList.remove('open');
+    if (recoverOverlay) recoverOverlay.classList.add('open');
+    if (recoverStep1) recoverStep1.style.display = 'block';
+    if (recoverStep2) recoverStep2.style.display = 'none';
+    if (recoverMessage) recoverMessage.textContent = '';
+    if (recoverError) recoverError.textContent = '';
+  });
+}
+if (closeRecoverBtn) {
+  closeRecoverBtn.addEventListener('click', () => {
+    if (recoverOverlay) recoverOverlay.classList.remove('open');
+  });
+}
+if (recoverSearchBtn) {
+  recoverSearchBtn.addEventListener('click', () => {
+    const firstName = recoverFirstName.value;
+    const lastName = recoverLastName.value;
+    if (!firstName || !lastName) {
+      if (recoverError) recoverError.textContent = 'Введите имя и фамилию';
+      return;
+    }
+    fetch('/api/auth/recover-login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ firstName, lastName })
+    })
+      .then(res => res.json())
+      .then(data => {
+        if (data.login) {
+          if (recoveredLogin) recoveredLogin.textContent = data.login;
+          if (recoverStep1) recoverStep1.style.display = 'none';
+          if (recoverStep2) recoverStep2.style.display = 'block';
+          if (recoverError) recoverError.textContent = '';
+          if (recoverMessage) recoverMessage.textContent = '';
+        } else {
+          if (recoverError) recoverError.textContent = data.error || 'Пользователь не найден';
+        }
+      })
+      .catch(() => {
+        if (recoverError) recoverError.textContent = 'Ошибка соединения';
+      });
+  });
+}
+if (recoverResetBtn) {
+  recoverResetBtn.addEventListener('click', () => {
+    const firstName = recoverFirstName.value;
+    const lastName = recoverLastName.value;
+    const login = recoveredLogin ? recoveredLogin.textContent : '';
+    const newPassword = recoverNewPassword.value;
+    if (!newPassword) {
+      if (recoverError) recoverError.textContent = 'Введите новый пароль';
+      return;
+    }
+    fetch('/api/auth/reset-password', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ firstName, lastName, login, newPassword })
+    })
+      .then(res => res.json())
+      .then(data => {
+        if (data.success) {
+          if (recoverMessage) recoverMessage.textContent = 'Пароль успешно изменён!';
+          if (recoverError) recoverError.textContent = '';
+          setTimeout(() => {
+            if (recoverOverlay) recoverOverlay.classList.remove('open');
+            if (recoverStep2) recoverStep2.style.display = 'none';
+            if (recoverStep1) recoverStep1.style.display = 'block';
+            if (recoverNewPassword) recoverNewPassword.value = '';
+            if (recoverMessage) recoverMessage.textContent = '';
+          }, 2000);
+        } else {
+          if (recoverError) recoverError.textContent = data.error || 'Ошибка сброса пароля';
+        }
+      })
+      .catch(() => {
+        if (recoverError) recoverError.textContent = 'Ошибка соединения';
+      });
+  });
+}
 
 // ---- Поиск в хедере ----
 const headerSearchInput = document.getElementById('headerSearchInput');
@@ -1141,11 +1282,95 @@ if (headerSearchBtn) {
 // ============================================================
 // УВЕДОМЛЕНИЯ (тосты и список)
 // ============================================================
-// ... (код уведомлений остаётся без изменений)
+let notifications = [];
+let notifInterval = null;
 
-// ============================================================
-// ФОН
-// ============================================================
+function loadNotifications() {
+  fetch('/api/notifications')
+    .then(res => res.json())
+    .then(data => {
+      notifications = data;
+      updateNotifBadge();
+      if (notifications.length > 0) {
+        showToast(notifications[0].message);
+      }
+    })
+    .catch(err => console.error('Ошибка загрузки уведомлений:', err));
+}
+
+function updateNotifBadge() {
+  if (!notifBadge) return;
+  const count = notifications.length;
+  if (count > 0) {
+    notifBadge.textContent = count;
+    notifBadge.style.display = 'inline';
+  } else {
+    notifBadge.style.display = 'none';
+  }
+}
+
+function markAllRead() {
+  fetch('/api/notifications/read', { method: 'POST' })
+    .then(res => res.json())
+    .then(data => {
+      if (data.success) {
+        notifications = [];
+        updateNotifBadge();
+        if (notifOverlay) notifOverlay.classList.remove('open');
+        document.querySelectorAll('.toast').forEach(el => el.remove());
+      }
+    });
+}
+
+function showToast(message) {
+  const toast = document.createElement('div');
+  toast.className = 'toast';
+  toast.textContent = message;
+  document.body.appendChild(toast);
+  setTimeout(() => {
+    toast.classList.add('show');
+  }, 100);
+  setTimeout(() => {
+    toast.classList.remove('show');
+    setTimeout(() => toast.remove(), 300);
+  }, 5000);
+}
+
+function openNotifModal() {
+  if (!notifList) return;
+  if (notifications.length === 0) {
+    notifList.innerHTML = '<p style="color:#7f8c8d;">Уведомлений нет</p>';
+  } else {
+    notifList.innerHTML = notifications.map(n =>
+      `<div style="border-bottom:1px solid #ecf0f1; padding:8px 0;">
+        <div>${n.message}</div>
+        <small style="color:#7f8c8d;">${new Date(n.created_at).toLocaleString()}</small>
+      </div>`
+    ).join('');
+  }
+  if (notifOverlay) notifOverlay.classList.add('open');
+}
+
+function closeNotifModal() {
+  if (notifOverlay) notifOverlay.classList.remove('open');
+}
+
+if (notifBtn) notifBtn.addEventListener('click', openNotifModal);
+if (closeNotifBtn) closeNotifBtn.addEventListener('click', closeNotifModal);
+if (notifOverlay) {
+  notifOverlay.addEventListener('click', (e) => {
+    if (e.target === notifOverlay) closeNotifModal();
+  });
+}
+if (markReadBtn) markReadBtn.addEventListener('click', markAllRead);
+
+function startNotifPolling() {
+  loadNotifications();
+  notifInterval = setInterval(loadNotifications, 30000);
+}
+startNotifPolling();
+
+// ---- ФОН (с кешированием) ----
 function applyBackground() {
   const cached = getCached('background');
   if (cached) {
