@@ -15,7 +15,6 @@
     .admin-form .full-width { grid-column:1/-1; }
     .admin-form label { font-weight:600; display:block; margin-bottom:4px; }
     .admin-form input, .admin-form select, .admin-form textarea { width:100%; padding:10px 14px; border:1px solid rgba(0,0,0,0.06); border-radius:14px; background:rgba(255,255,255,0.6); }
-    .admin-form select[multiple] { height:80px; }
     .admin-list-item { display:flex; justify-content:space-between; align-items:center; padding:12px 16px; background:rgba(255,255,255,0.6); border-radius:16px; margin-bottom:8px; flex-wrap:wrap; gap:10px; }
     .admin-list-item .item-preview { display:flex; align-items:center; gap:15px; }
     .admin-list-item .item-preview img { width:50px; height:50px; object-fit:contain; border-radius:10px; }
@@ -36,9 +35,7 @@
     .image-preview { margin-top:8px; max-width:200px; max-height:200px; border:1px solid #ecf0f1; border-radius:8px; padding:4px; background:white; }
     .image-preview img { width:100%; height:100%; object-fit:contain; border-radius:4px; max-height:200px; }
     .image-preview .empty-preview { color:#7f8c8d; font-size:13px; padding:10px; text-align:center; }
-    .extra-categories-info { font-size:13px; color:#7f8c8d; margin-top:4px; }
-    .extra-categories-display { margin-top:6px; font-size:14px; color:#2c3e50; background:#f0f2f5; padding:6px 12px; border-radius:8px; border-left:3px solid #27ae60; }
-    .extra-categories-display .empty { color:#7f8c8d; }
+    .extra-category-label { font-weight:600; margin-top:8px; display:block; }
   </style>
 </head>
 <body>
@@ -78,14 +75,10 @@
         <div><label>Оптовая цена (₽)</label><input type="number" id="productWholesalePrice" min="0" step="0.01" placeholder="Необязательно"></div>
         <div><label>Категория *</label><select id="productCategory" required></select></div>
         <div>
-          <label>Доп. категории (необязательно)</label>
-          <select id="productExtraCategories" multiple>
-            <!-- загружается через JS -->
+          <label class="extra-category-label">Дополнительная категория (необязательно)</label>
+          <select id="productExtraCategory">
+            <option value="">Не выбрана</option>
           </select>
-          <div class="extra-categories-info">Выберите несколько (Ctrl+клик)</div>
-          <div id="productExtraCategoriesDisplay" class="extra-categories-display">
-            <span class="empty">Доп. категории не выбраны</span>
-          </div>
         </div>
         <div><label>Бренд *</label><select id="productBrand" required></select></div>
         <div><label>Объём *</label><select id="productVolume" required></select></div>
@@ -127,14 +120,10 @@
         <div><label>Название бренда *</label><input type="text" id="brandName" required></div>
         <div><label>Категория *</label><select id="brandCategory" required></select></div>
         <div>
-          <label>Доп. категории (необязательно)</label>
-          <select id="brandExtraCategories" multiple>
-            <!-- загружается через JS -->
+          <label class="extra-category-label">Дополнительная категория (необязательно)</label>
+          <select id="brandExtraCategory">
+            <option value="">Не выбрана</option>
           </select>
-          <div class="extra-categories-info">Выберите несколько (Ctrl+клик)</div>
-          <div id="brandExtraCategoriesDisplay" class="extra-categories-display">
-            <span class="empty">Доп. категории не выбраны</span>
-          </div>
         </div>
         <div class="full-width"><label>Описание</label><textarea id="brandDescription" rows="2"></textarea></div>
         <div class="full-width">
@@ -148,7 +137,7 @@
       <div id="brandList"></div>
     </div>
 
-    <!-- Остальные вкладки -->
+    <!-- Остальные вкладки (объёмы, заказы, пользователи, новости, настройки, дизайн) без изменений -->
     <div id="tab-volumes" class="tab-content">
       <h3 style="margin-bottom:16px;">Управление объёмами</h3>
       <form id="volumeForm" class="admin-form">
@@ -267,40 +256,14 @@
     }
   }
 
-  function updateExtraCategoriesDisplay(selectId, displayId) {
-    const select = document.getElementById(selectId);
-    const display = document.getElementById(displayId);
-    if (!select || !display) return;
-    const selected = Array.from(select.selectedOptions).map(opt => opt.textContent);
-    if (selected.length) {
-      display.innerHTML = '✅ Выбрано: <strong>' + selected.join(' / ') + '</strong>';
-    } else {
-      display.innerHTML = '<span class="empty">Доп. категории не выбраны</span>';
-    }
-  }
-
-  function initExtraCategoriesDisplay() {
-    const selects = [
-      { selectId: 'productExtraCategories', displayId: 'productExtraCategoriesDisplay' },
-      { selectId: 'brandExtraCategories', displayId: 'brandExtraCategoriesDisplay' }
-    ];
-    selects.forEach(({ selectId, displayId }) => {
-      const select = document.getElementById(selectId);
-      if (select) {
-        select.addEventListener('change', function() {
-          updateExtraCategoriesDisplay(selectId, displayId);
-        });
-        setTimeout(() => updateExtraCategoriesDisplay(selectId, displayId), 100);
-      }
-    });
-  }
-
-  function populateExtraCategorySelects() {
+  // ---- Заполнение селектов ----
+  function populateCategorySelects() {
     fetch('/api/admin/categories')
       .then(r => r.json())
       .then(cats => {
-        const selects = ['productExtraCategories', 'brandExtraCategories'];
-        selects.forEach(id => {
+        // Основные селекты
+        const mainSelects = ['productCategory', 'brandCategory'];
+        mainSelects.forEach(id => {
           const sel = document.getElementById(id);
           if (!sel) return;
           sel.innerHTML = '';
@@ -311,7 +274,19 @@
             sel.appendChild(opt);
           });
         });
-        setTimeout(initExtraCategoriesDisplay, 50);
+        // Дополнительные селекты
+        const extraSelects = ['productExtraCategory', 'brandExtraCategory'];
+        extraSelects.forEach(id => {
+          const sel = document.getElementById(id);
+          if (!sel) return;
+          sel.innerHTML = '<option value="">Не выбрана</option>';
+          cats.forEach(c => {
+            const opt = document.createElement('option');
+            opt.value = c.id;
+            opt.textContent = c.name + (c.icon ? ' ' + c.icon : '');
+            sel.appendChild(opt);
+          });
+        });
       });
   }
 
@@ -325,7 +300,6 @@
         loadAll();
         showTab('products');
         setTimeout(setupAllPreviews, 500);
-        setTimeout(initExtraCategoriesDisplay, 600);
       }
     });
 
@@ -368,7 +342,6 @@
     if (tabName === 'design') loadBgPreview();
     if (tabName === 'products' || tabName === 'categories' || tabName === 'brands') {
       setTimeout(setupAllPreviews, 100);
-      setTimeout(initExtraCategoriesDisplay, 200);
     }
   }
 
@@ -383,7 +356,7 @@
     loadCategoriesSelect();
     loadBrandsSelect();
     loadVolumesSelect();
-    populateExtraCategorySelects();
+    populateCategorySelects();
     loadCategoriesAdmin();
     loadBrandsAdmin();
     loadVolumesAdmin();
@@ -393,6 +366,7 @@
     loadNewsAdmin();
   }
 
+  // ---- Загрузка категорий в селекты ----
   function loadCategoriesSelect() {
     fetch('/api/admin/categories')
       .then(r => r.json())
@@ -402,6 +376,19 @@
           const sel = document.getElementById(id);
           if (!sel) return;
           sel.innerHTML = '';
+          cats.forEach(c => {
+            const opt = document.createElement('option');
+            opt.value = c.id;
+            opt.textContent = c.name + (c.icon ? ' ' + c.icon : '');
+            sel.appendChild(opt);
+          });
+        });
+        // Дополнительные селекты обновляем отдельно
+        const extraSelects = ['productExtraCategory', 'brandExtraCategory'];
+        extraSelects.forEach(id => {
+          const sel = document.getElementById(id);
+          if (!sel) return;
+          sel.innerHTML = '<option value="">Не выбрана</option>';
           cats.forEach(c => {
             const opt = document.createElement('option');
             opt.value = c.id;
@@ -444,6 +431,7 @@
       .catch(err => console.error('Ошибка загрузки объёмов:', err));
   }
 
+  // ---- Товары (админ) ----
   function loadProductsAdmin() {
     fetch('/api/admin/products')
       .then(r => r.json())
@@ -454,15 +442,14 @@
           return;
         }
         list.innerHTML = products.map(p => {
-          const extraCats = p.extra_category_ids && p.extra_category_ids.length ? 
-            ` (доп: ${p.extra_category_ids.join(', ')})` : '';
+          const extraCat = p.extra_category_id ? ` (доп: ${p.extra_category_id})` : '';
           return `
           <div class="admin-list-item">
             <div class="item-preview">
               ${p.image ? `<img src="${p.image}" alt="${p.name}">` : ''}
               <div class="item-info">
                 <span class="name">${p.name}</span>
-                <span class="meta">${p.category_name || 'Без кат.'}${extraCats} • ${p.brand_name || 'Без бр.'} • ${p.volume_name || 'Без объёма'} • ${p.price} ₽</span>
+                <span class="meta">${p.category_name || 'Без кат.'}${extraCat} • ${p.brand_name || 'Без бр.'} • ${p.volume_name || 'Без объёма'} • ${p.price} ₽</span>
                 ${p.wholesale_price ? `<span class="meta">Опт: ${p.wholesale_price} ₽</span>` : ''}
               </div>
             </div>
@@ -487,15 +474,13 @@
               document.getElementById('productImageUrl').value = product.image || '';
               document.getElementById('productDescription').value = product.description || '';
               document.getElementById('formSubmitBtn').textContent = '💾 Сохранить изменения';
-              const extraSelect = document.getElementById('productExtraCategories');
-              if (product.extra_category_ids && product.extra_category_ids.length) {
-                Array.from(extraSelect.options).forEach(opt => {
-                  opt.selected = product.extra_category_ids.includes(parseInt(opt.value));
-                });
+              // Устанавливаем дополнительную категорию
+              const extraSelect = document.getElementById('productExtraCategory');
+              if (product.extra_category_id) {
+                extraSelect.value = product.extra_category_id;
               } else {
-                extraSelect.selectedIndex = -1;
+                extraSelect.value = '';
               }
-              setTimeout(() => updateExtraCategoriesDisplay('productExtraCategories', 'productExtraCategoriesDisplay'), 50);
               setTimeout(setupAllPreviews, 100);
             }
           });
@@ -527,8 +512,7 @@
     const imageUrl = document.getElementById('productImageUrl').value.trim();
     const description = document.getElementById('productDescription').value.trim();
     const imageFile = document.getElementById('productImage').files[0];
-    const extraSelect = document.getElementById('productExtraCategories');
-    const extra_category_ids = Array.from(extraSelect.selectedOptions).map(opt => parseInt(opt.value));
+    const extraCategory = document.getElementById('productExtraCategory').value;
     const formData = new FormData();
     formData.append('name', name);
     formData.append('price', price);
@@ -539,7 +523,7 @@
     formData.append('imageUrl', imageUrl);
     formData.append('description', description);
     if (imageFile) formData.append('image', imageFile);
-    extra_category_ids.forEach(id => formData.append('extra_category_ids[]', id));
+    if (extraCategory) formData.append('extra_category_id', extraCategory);
     const url = id ? `/api/admin/products/${id}` : '/api/admin/products';
     const method = id ? 'PUT' : 'POST';
     fetch(url, { method, body: formData })
@@ -553,11 +537,11 @@
           document.getElementById('editId').value = '';
           document.getElementById('formSubmitBtn').textContent = '➕ Добавить товар';
           setTimeout(setupAllPreviews, 100);
-          setTimeout(() => updateExtraCategoriesDisplay('productExtraCategories', 'productExtraCategoriesDisplay'), 150);
         }
       });
   });
 
+  // ---- Категории (админ) ----
   function loadCategoriesAdmin() {
     fetch('/api/admin/categories')
       .then(r => r.json())
@@ -604,7 +588,7 @@
                   clearClientCache('categories');
                   loadCategoriesAdmin();
                   loadCategoriesSelect();
-                  populateExtraCategorySelects();
+                  populateCategorySelects();
                 });
             }
           });
@@ -634,7 +618,7 @@
           clearClientCache('categories');
           loadCategoriesAdmin();
           loadCategoriesSelect();
-          populateExtraCategorySelects();
+          populateCategorySelects();
           this.reset();
           document.getElementById('editCategoryId').value = '';
           document.getElementById('categorySubmitBtn').textContent = '➕ Добавить категорию';
@@ -644,6 +628,7 @@
       .catch(err => alert('Ошибка: ' + err.message));
   });
 
+  // ---- Бренды (админ) ----
   function loadBrandsAdmin() {
     fetch('/api/admin/brands')
       .then(r => r.json())
@@ -654,15 +639,14 @@
           return;
         }
         list.innerHTML = brands.map(b => {
-          const extraCats = b.extra_category_ids && b.extra_category_ids.length ? 
-            ` (доп: ${b.extra_category_ids.join(', ')})` : '';
+          const extraCat = b.extra_category_id ? ` (доп: ${b.extra_category_id})` : '';
           return `
           <div class="admin-list-item">
             <div class="item-preview">
               ${b.image ? `<img src="${b.image}" alt="${b.name}">` : '<span style="font-size:30px;">📦</span>'}
               <div class="item-info">
                 <span class="name">${b.name}</span>
-                <span class="meta">${b.category_name || 'Без кат.'}${extraCats} • ${b.description ? b.description.substring(0, 40) : ''}</span>
+                <span class="meta">${b.category_name || 'Без кат.'}${extraCat} • ${b.description ? b.description.substring(0, 40) : ''}</span>
               </div>
             </div>
             <div class="item-actions">
@@ -682,15 +666,12 @@
               document.getElementById('brandDescription').value = brand.description || '';
               document.getElementById('brandImageUrl').value = brand.image || '';
               document.getElementById('brandSubmitBtn').textContent = '💾 Сохранить';
-              const extraSelect = document.getElementById('brandExtraCategories');
-              if (brand.extra_category_ids && brand.extra_category_ids.length) {
-                Array.from(extraSelect.options).forEach(opt => {
-                  opt.selected = brand.extra_category_ids.includes(parseInt(opt.value));
-                });
+              const extraSelect = document.getElementById('brandExtraCategory');
+              if (brand.extra_category_id) {
+                extraSelect.value = brand.extra_category_id;
               } else {
-                extraSelect.selectedIndex = -1;
+                extraSelect.value = '';
               }
-              setTimeout(() => updateExtraCategoriesDisplay('brandExtraCategories', 'brandExtraCategoriesDisplay'), 50);
               setTimeout(setupAllPreviews, 100);
             }
           });
@@ -719,15 +700,14 @@
     const description = document.getElementById('brandDescription').value.trim();
     const imageUrl = document.getElementById('brandImageUrl').value.trim();
     const imageFile = document.getElementById('brandImageFile').files[0];
-    const extraSelect = document.getElementById('brandExtraCategories');
-    const extra_category_ids = Array.from(extraSelect.selectedOptions).map(opt => parseInt(opt.value));
+    const extraCategory = document.getElementById('brandExtraCategory').value;
     const formData = new FormData();
     formData.append('name', name);
     formData.append('category_id', category_id);
     formData.append('description', description);
     formData.append('imageUrl', imageUrl);
     if (imageFile) formData.append('image', imageFile);
-    extra_category_ids.forEach(id => formData.append('extra_category_ids[]', id));
+    if (extraCategory) formData.append('extra_category_id', extraCategory);
     const url = id ? `/api/admin/brands/${id}` : '/api/admin/brands';
     const method = id ? 'PUT' : 'POST';
     fetch(url, { method, body: formData })
@@ -741,12 +721,11 @@
           document.getElementById('editBrandId').value = '';
           document.getElementById('brandSubmitBtn').textContent = '➕ Добавить бренд';
           setTimeout(setupAllPreviews, 100);
-          setTimeout(() => updateExtraCategoriesDisplay('brandExtraCategories', 'brandExtraCategoriesDisplay'), 150);
         }
       });
   });
 
-  // ---- Объёмы (админ) ----
+  // ---- Остальные функции (объёмы, заказы, пользователи, новости, настройки, дизайн) ----
   function loadVolumesAdmin() {
     fetch('/api/admin/volumes')
       .then(r => r.json())
@@ -809,7 +788,6 @@
       });
   });
 
-  // ---- Заказы (админ) ----
   function loadOrdersAdmin() {
     fetch('/api/admin/orders')
       .then(r => r.json())
@@ -865,7 +843,6 @@
       });
   }
 
-  // ---- Пользователи (админ) ----
   function loadUsersAdmin() {
     fetch('/api/admin/users')
       .then(r => r.json())
@@ -924,7 +901,6 @@
       });
   }
 
-  // ---- Новости (админ) ----
   function loadNewsAdmin() {
     fetch('/api/admin/news')
       .then(r => r.json())
@@ -997,7 +973,6 @@
       });
   });
 
-  // ---- Настройки (админ) ----
   function loadSettings() {
     fetch('/api/settings')
       .then(r => r.json())
@@ -1042,7 +1017,6 @@
       });
   });
 
-  // ---- Дизайн (админ) ----
   function loadBgPreview() {
     fetch('/api/background')
       .then(r => r.json())
