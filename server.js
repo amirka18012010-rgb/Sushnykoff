@@ -13,9 +13,9 @@ const PORT = process.env.PORT || 3000;
 
 // ---- Подключение к Supabase ----
 const supabaseUrl = process.env.SUPABASE_URL;
-const supabaseKey = process.env.SUPABASE_ANON_KEY;
+const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 if (!supabaseUrl || !supabaseKey) {
-  console.error('❌ Отсутствуют SUPABASE_URL или SUPABASE_ANON_KEY в переменных окружения');
+  console.error('❌ Отсутствуют SUPABASE_URL или SUPABASE_SERVICE_ROLE_KEY в переменных окружения');
   process.exit(1);
 }
 const supabase = createClient(supabaseUrl, supabaseKey);
