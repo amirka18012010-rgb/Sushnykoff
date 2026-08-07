@@ -488,7 +488,12 @@
     const method = id ? 'PUT' : 'POST';
     fetch(url, { method, body: formData })
       .then(r => r.json())
-      .then(data => {
+      .then(data => { 
+    // ... ваш код обработки успеха
+  })
+  .catch(err => {
+    alert('❌ Ошибка соединения с сервером: ' + err.message);
+  });
         if (data.error) alert(data.error);
         else {
           clearClientCache(null);
