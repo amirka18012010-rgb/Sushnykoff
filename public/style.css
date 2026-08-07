@@ -311,7 +311,7 @@ body.has-bg .side-header {
 }
 
 /* ============================================================
-   БРЕНДЫ (ОБНОВЛЕНЫ: ТЕПЕРЬ КВАДРАТНЫЕ И КРАСИВЫЕ)
+   БРЕНДЫ (ТЕПЕРЬ ТОЛЬКО КВАДРАТНЫЕ КАРТИНКИ БЕЗ ТЕКСТА)
    ============================================================ */
 .brands-grid {
   display: grid;
@@ -349,25 +349,9 @@ body.has-bg .side-header {
   font-size: 56px;
   background: #f0f2f5;
 }
-.brand-card .brand-info {
-  position: absolute;
-  bottom: 0;
-  left: 0;
-  right: 0;
-  padding: 14px 16px;
-  background: linear-gradient(to top, rgba(0,0,0,0.75) 0%, transparent 60%);
-  text-align: center;
-}
-.brand-card .name {
-  font-size: 18px;
-  font-weight: 700;
-  color: white !important;
-  margin: 0;
-  text-shadow: 0 2px 8px rgba(0,0,0,0.5);
-}
 
 /* ============================================================
-   ТОВАРЫ (СЕТКА)
+   ТОВАРЫ (СЕТКА) - объект-фит уже настроен для сжатия
    ============================================================ */
 .products-grid {
   display: grid;
@@ -1025,8 +1009,7 @@ body.has-bg .side-header {
   .category-card .category-icon {
     height: auto;
   }
-  .category-card .name,
-  .brand-card .name {
+  .category-card .name {
     font-size: 15px;
   }
   .product-card .product-img {
@@ -1044,9 +1027,6 @@ body.has-bg .side-header {
   }
   .brand-card img {
     height: auto;
-  }
-  .brand-card .name {
-    font-size: 15px;
   }
 }
 
