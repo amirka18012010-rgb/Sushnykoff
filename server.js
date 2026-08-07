@@ -36,14 +36,25 @@ app.use(session({
   cookie: { maxAge: 1000 * 60 * 60 * 24 }
 }));
 
-// ---- Multer (лимит 2 МБ) ----
-const storage = multer.memoryStorage();
-const upload = multer({
-  storage,
-  limits: { fileSize: 2 * 1024 * 1024 } 
+// ---- Multer (временный диск вместо памяти - спасает от вылетов) ----
+const storage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    // Используем системную временную папку, которая есть на Render
+    cb(null, '/tmp'); 
+  },
+  filename: (req, file, cb) => {
+    // Генерируем уникальное имя файла
+    cb(null, `${Date.now()}-${Math.random().toString(36).substring(2, 15)}${path.extname(file.originalname)}`);
+  }
 });
 
-// ---- Обработка ошибок Multer (важно, чтобы не падал с 500 пустым) ----
+// Лимит оставляем 2 МБ для безопасности
+const upload = multer({
+  storage,
+  limits: { fileSize: 2 * 1024 * 1024 }
+});
+
+// ---- Обработка ошибок Multer ----
 app.use((err, req, res, next) => {
   if (err instanceof multer.MulterError) {
     if (err.code === 'LIMIT_FILE_SIZE') {
@@ -54,14 +65,20 @@ app.use((err, req, res, next) => {
   next(err);
 });
 
-// ---- Функция сжатия через Sharp ----
+// ---- Функция сжатия через Sharp (работает через диск, не через RAM) ----
 async function uploadToStorage(file, folder) {
   if (!file) return null;
   try {
-    const optimizedBuffer = await sharp(file.buffer)
+    // Читаем файл с диска
+    const fileBuffer = fs.readFileSync(file.path);
+    
+    const optimizedBuffer = await sharp(fileBuffer)
       .resize(800, null, { withoutEnlargement: true })
       .webp({ quality: 80 })
       .toBuffer();
+
+    // Не забываем удалить временный файл с диска, чтобы не забивать место
+    fs.unlinkSync(file.path);
 
     const fileExt = 'webp';
     const fileName = `${folder}/${Date.now()}-${Math.random().toString(36).substring(2, 15)}.${fileExt}`;
@@ -83,6 +100,8 @@ async function uploadToStorage(file, folder) {
     return publicUrlData.publicUrl;
   } catch (err) {
     console.error('Ошибка при обработке изображения:', err);
+    // Если произошла ошибка, всё равно пытаемся удалить временный файл
+    if (fs.existsSync(file.path)) fs.unlinkSync(file.path);
     return null;
   }
 }
@@ -137,7 +156,7 @@ app.get('/api/ping', (req, res) => {
   res.send('ok');
 });
 
-// ---- 1. Категории ----
+// ---- Категории ----
 app.get('/api/categories', async (req, res) => {
   try {
     const { data, error } = await supabase
@@ -151,7 +170,7 @@ app.get('/api/categories', async (req, res) => {
   }
 });
 
-// ---- 2. Бренды по категории ----
+// ---- Бренды по категории ----
 app.get('/api/brands', async (req, res) => {
   try {
     const { categoryId } = req.query;
@@ -165,7 +184,7 @@ app.get('/api/brands', async (req, res) => {
   }
 });
 
-// ---- 3. Бренд по ID ----
+// ---- Бренд по ID ----
 app.get('/api/brands/:id', async (req, res) => {
   try {
     const { data, error } = await supabase
@@ -180,7 +199,7 @@ app.get('/api/brands/:id', async (req, res) => {
   }
 });
 
-// ---- 4. Объёмы для бренда ----
+// ---- Объёмы для бренда ----
 app.get('/api/volumes', async (req, res) => {
   try {
     const { brandId } = req.query;
@@ -204,7 +223,7 @@ app.get('/api/volumes', async (req, res) => {
   }
 });
 
-// ---- 5. Товары (фильтр, поиск, пагинация) ----
+// ---- Товары ----
 app.get('/api/products', async (req, res) => {
   try {
     const { brandId, volumeId, category, search, page = 1, limit = 12, sort = 'newest', ids } = req.query;
@@ -273,7 +292,7 @@ app.get('/api/products', async (req, res) => {
   }
 });
 
-// ---- 6. Товар по ID ----
+// ---- Товар по ID ----
 app.get('/api/products/:id', async (req, res) => {
   try {
     const { data, error } = await supabase
@@ -296,7 +315,7 @@ app.get('/api/products/:id', async (req, res) => {
   }
 });
 
-// ---- 7. Отзывы ----
+// ---- Отзывы ----
 app.get('/api/products/:id/reviews', async (req, res) => {
   try {
     const { data, error } = await supabase
@@ -336,7 +355,7 @@ app.post('/api/products/:id/reviews', async (req, res) => {
   }
 });
 
-// ---- 8. Избранное ----
+// ---- Избранное ----
 app.get('/api/favorites', async (req, res) => {
   if (!isAuthenticated(req)) return res.status(401).json({ error: 'Необходимо войти' });
   try {
@@ -379,7 +398,7 @@ app.delete('/api/favorites/:productId', async (req, res) => {
   }
 });
 
-// ---- 9. Новости ----
+// ---- Новости ----
 app.get('/api/news/latest', async (req, res) => {
   try {
     const { data, error } = await supabase
@@ -395,7 +414,7 @@ app.get('/api/news/latest', async (req, res) => {
   }
 });
 
-// ---- 10. Настройки ----
+// ---- Настройки ----
 app.get('/api/settings', async (req, res) => {
   try {
     const { data, error } = await supabase.from('settings').select('key, value');
@@ -408,7 +427,7 @@ app.get('/api/settings', async (req, res) => {
   }
 });
 
-// ---- 11. Уведомления ----
+// ---- Уведомления ----
 app.get('/api/notifications', async (req, res) => {
   try {
     const { data, error } = await supabase
@@ -432,7 +451,7 @@ app.post('/api/notifications/read', async (req, res) => {
   }
 });
 
-// ---- 12. Фон ----
+// ---- Фон ----
 app.get('/api/background', async (req, res) => {
   try {
     const { data, error } = await supabase
@@ -447,7 +466,7 @@ app.get('/api/background', async (req, res) => {
   }
 });
 
-// ---- 13. Аутентификация ----
+// ---- Аутентификация ----
 app.post('/api/auth/register', async (req, res) => {
   try {
     const { firstName, lastName, login, password, phone } = req.body;
@@ -559,7 +578,7 @@ app.post('/api/auth/reset-password', async (req, res) => {
   }
 });
 
-// ---- 14. Корзина ----
+// ---- Корзина ----
 app.get('/api/cart', async (req, res) => {
   try {
     if (isAuthenticated(req)) {
@@ -662,7 +681,7 @@ app.post('/api/cart/sync', async (req, res) => {
   }
 });
 
-// ---- 15. Заказы ----
+// ---- Заказы ----
 app.post('/api/orders', async (req, res) => {
   try {
     if (!isAuthenticated(req)) return res.status(401).json({ error: 'Необходимо войти' });
@@ -756,7 +775,7 @@ app.delete('/api/orders/history', async (req, res) => {
 });
 
 // ============================================================
-// АДМИН-МАРШРУТЫ (с лимитами 250)
+// АДМИН-МАРШРУТЫ
 // ============================================================
 
 app.put('/api/admin/settings', async (req, res) => {
