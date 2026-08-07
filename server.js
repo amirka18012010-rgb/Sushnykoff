@@ -13,7 +13,7 @@ const PORT = process.env.PORT || 3000;
 
 // ---- Подключение к Supabase ----
 const supabaseUrl = process.env.SUPABASE_URL;
-const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY; // <--- Вы поменяли на SERVICE_ROLE_KEY, оставляю так.
 if (!supabaseUrl || !supabaseKey) {
   console.error('❌ Отсутствуют SUPABASE_URL или SUPABASE_SERVICE_ROLE_KEY в переменных окружения');
   process.exit(1);
@@ -386,13 +386,13 @@ app.get('/api/settings', async (req, res) => {
   }
 });
 
-// ---- 11. Уведомления ----
+// ---- 11. Уведомления (ЗДЕСЬ БЫЛИ СДЕЛАНЫ ПРАВКИ false -> 0 и true -> 1) ----
 app.get('/api/notifications', async (req, res) => {
   try {
     const { data, error } = await supabase
       .from('notifications')
       .select('*')
-      .eq('is_read', false)
+      .eq('is_read', 0)  // <--- ИЗМЕНЕНО: false на 0
       .order('created_at', { ascending: false });
     if (error) throw error;
     res.json(data);
@@ -402,7 +402,7 @@ app.get('/api/notifications', async (req, res) => {
 });
 app.post('/api/notifications/read', async (req, res) => {
   try {
-    await supabase.from('notifications').update({ is_read: true }).eq('is_read', false);
+    await supabase.from('notifications').update({ is_read: 1 }).eq('is_read', 0); // <--- ИЗМЕНЕНО: true на 1, false на 0
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
