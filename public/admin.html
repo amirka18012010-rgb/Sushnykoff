@@ -211,7 +211,7 @@
 </div>
 
 <script>
-  // ===== ПОЛНЫЙ СКРИПТ АДМИНКИ (с превью) =====
+  // ===== ПОЛНЫЙ СКРИПТ АДМИНКИ (с превью и авто-скроллом) =====
   const loginDiv = document.getElementById('adminLogin');
   const panelDiv = document.getElementById('adminPanel');
   const loginBtn = document.getElementById('loginBtn');
@@ -432,6 +432,7 @@
         `).join('');
         list.querySelectorAll('.edit-btn').forEach(btn => {
           btn.addEventListener('click', () => {
+            window.scrollTo({ top: 0, behavior: 'smooth' }); // <--- Прокрутка вверх
             const id = parseInt(btn.dataset.id);
             const product = products.find(p => p.id === id);
             if (product) {
@@ -490,6 +491,7 @@
       .then(data => {
         if (data.error) alert(data.error);
         else {
+          clearClientCache(null);
           loadProductsAdmin();
           document.getElementById('productForm').reset();
           document.getElementById('editId').value = '';
@@ -525,6 +527,7 @@
         `).join('');
         list.querySelectorAll('.edit-btn').forEach(btn => {
           btn.addEventListener('click', () => {
+            window.scrollTo({ top: 0, behavior: 'smooth' }); // <--- Прокрутка вверх
             const id = parseInt(btn.dataset.id);
             const cat = cats.find(c => c.id === id);
             if (cat) {
@@ -611,6 +614,7 @@
         `).join('');
         list.querySelectorAll('.edit-btn').forEach(btn => {
           btn.addEventListener('click', () => {
+            window.scrollTo({ top: 0, behavior: 'smooth' }); // <--- Прокрутка вверх
             const id = parseInt(btn.dataset.id);
             const brand = brands.find(b => b.id === id);
             if (brand) {
@@ -690,6 +694,7 @@
         `).join('');
         list.querySelectorAll('.edit-btn').forEach(btn => {
           btn.addEventListener('click', () => {
+            window.scrollTo({ top: 0, behavior: 'smooth' }); // <--- Прокрутка вверх
             const id = parseInt(btn.dataset.id);
             const vol = volumes.find(v => v.id === id);
             if (vol) {
@@ -875,6 +880,7 @@
 
         list.querySelectorAll('.edit-btn').forEach(btn => {
           btn.addEventListener('click', () => {
+            window.scrollTo({ top: 0, behavior: 'smooth' }); // <--- Прокрутка вверх
             const id = parseInt(btn.dataset.id);
             const item = news.find(n => n.id === id);
             if (item) {
