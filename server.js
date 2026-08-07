@@ -7,6 +7,7 @@ const path = require('path');
 const fs = require('fs');
 const bcrypt = require('bcrypt');
 const { createClient } = require('@supabase/supabase-js');
+const sharp = require('sharp'); // Добавили sharp для сжатия
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -35,33 +36,47 @@ app.use(session({
   cookie: { maxAge: 1000 * 60 * 60 * 24 }
 }));
 
-// ---- Multer ----
+// ---- Multer (лимит 5 МБ, как вы хотели) ----
 const storage = multer.memoryStorage();
 const upload = multer({
   storage,
-  limits: { fileSize: 1 * 1024 * 1024 } 
+  limits: { fileSize: 5 * 1024 * 1024 } // 5 МБ
 });
 
-// ---- Вспомогательная функция для загрузки в Storage ----
+// ---- Вспомогательная функция для сжатия и загрузки в Storage ----
 async function uploadToStorage(file, folder) {
   if (!file) return null;
-  const fileExt = path.extname(file.originalname);
-  const fileName = `${folder}/${Date.now()}-${Math.random().toString(36).substring(2, 15)}${fileExt}`;
-  const { data, error } = await supabase.storage
-    .from('images')
-    .upload(fileName, file.buffer, {
-      contentType: file.mimetype,
-      cacheControl: '3600',
-      upsert: false
-    });
-  if (error) {
-    console.error('Ошибка загрузки в Storage:', error);
+  try {
+    // Сжимаем изображение с помощью sharp
+    const optimizedBuffer = await sharp(file.buffer)
+      .resize(800, null, { // Ширина 800px, высота автоматически
+        withoutEnlargement: true
+      })
+      .webp({ quality: 80 }) // Конвертируем в WebP с качеством 80%
+      .toBuffer();
+
+    const fileExt = 'webp'; // Теперь все картинки будут .webp
+    const fileName = `${folder}/${Date.now()}-${Math.random().toString(36).substring(2, 15)}.${fileExt}`;
+    
+    const { data, error } = await supabase.storage
+      .from('images')
+      .upload(fileName, optimizedBuffer, {
+        contentType: 'image/webp',
+        cacheControl: '3600',
+        upsert: false
+      });
+    if (error) {
+      console.error('Ошибка загрузки в Storage:', error);
+      return null;
+    }
+    const { data: publicUrlData } = supabase.storage
+      .from('images')
+      .getPublicUrl(fileName);
+    return publicUrlData.publicUrl;
+  } catch (err) {
+    console.error('Ошибка при обработке изображения:', err);
     return null;
   }
-  const { data: publicUrlData } = supabase.storage
-    .from('images')
-    .getPublicUrl(fileName);
-  return publicUrlData.publicUrl;
 }
 
 // ---- Вспомогательные функции ----
@@ -181,7 +196,7 @@ app.get('/api/volumes', async (req, res) => {
   }
 });
 
-// ---- 5. Товары (фильтр, поиск, пагинация, сортировка) ----
+// ---- 5. Товары ----
 app.get('/api/products', async (req, res) => {
   try {
     const { brandId, volumeId, category, search, page = 1, limit = 12, sort = 'newest', ids } = req.query;
@@ -727,7 +742,7 @@ app.delete('/api/orders/history', async (req, res) => {
 });
 
 // ============================================================
-// АДМИН-МАРШРУТЫ (с лимитами 250)
+// АДМИН-МАРШРУТЫ
 // ============================================================
 
 app.put('/api/admin/settings', async (req, res) => {
@@ -795,7 +810,7 @@ app.get('/api/admin/products', async (req, res) => {
   }
 });
 
-// ---- Админ: добавление товара (СДЕЛАНА ПРАВКА: добавлены детальные логи) ----
+// ---- Админ: добавление товара ----
 app.post('/api/admin/products', upload.single('image'), async (req, res) => {
   try {
     if (!isAdmin(req)) return res.status(403).json({ error: 'Доступ запрещён' });
@@ -808,11 +823,8 @@ app.post('/api/admin/products', upload.single('image'), async (req, res) => {
       image = imageUrl.trim();
     }
     if (!name || !price || !category_id || !brand_id || !volume_id) {
-      console.warn('⚠️ Ошибка валидации: не заполнены обязательные поля!');
       return res.status(400).json({ error: 'Заполните все поля (название, цена, категория, бренд, объём)' });
     }
-    
-    console.log('📦 Попытка добавить товар в базу:', { name, price, category_id, brand_id, volume_id });
     
     const { data, error } = await supabase
       .from('products')
@@ -832,8 +844,6 @@ app.post('/api/admin/products', upload.single('image'), async (req, res) => {
       console.error('❌ ОШИБКА ПРИ ВСТАВКЕ ТОВАРА В БАЗУ:', error);
       throw error;
     }
-    
-    console.log('✅ Товар успешно добавлен с ID:', data[0].id);
     
     // Отправляем уведомление в фоне
     supabase.from('notifications').insert({ message: 'Добавлен новый товар: ' + name })
