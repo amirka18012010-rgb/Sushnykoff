@@ -587,7 +587,7 @@
       .catch(err => alert('Ошибка: ' + err.message));
   });
 
-  // ---- Бренды ----
+  // ---- Бренды (ЗДЕСЬ БЫЛА СДЕЛАНА ПРАВКА, ЧТОБЫ НАЗВАНИЕ БРЕНДА БЫЛО ССЫЛКОЙ) ----
   function loadBrandsAdmin() {
     fetch('/api/admin/brands')
       .then(r => r.json())
@@ -602,7 +602,7 @@
             <div class="item-preview">
               ${b.image ? `<img src="${b.image}" alt="${b.name}">` : '<span style="font-size:30px;">📦</span>'}
               <div class="item-info">
-                <span class="name">${b.name}</span>
+                <a href="/brand.html?id=${b.id}" target="_blank" class="name" style="color:#3498db; text-decoration:underline;">${b.name}</a>
                 <span class="meta">${b.category_name} • ${b.description ? b.description.substring(0, 40) : ''}</span>
               </div>
             </div>
