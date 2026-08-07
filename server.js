@@ -13,7 +13,7 @@ const PORT = process.env.PORT || 3000;
 
 // ---- Подключение к Supabase ----
 const supabaseUrl = process.env.SUPABASE_URL;
-const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY; // <--- Вы поменяли на SERVICE_ROLE_KEY, оставляю так.
+const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 if (!supabaseUrl || !supabaseKey) {
   console.error('❌ Отсутствуют SUPABASE_URL или SUPABASE_SERVICE_ROLE_KEY в переменных окружения');
   process.exit(1);
@@ -24,7 +24,8 @@ const supabase = createClient(supabaseUrl, supabaseKey);
 app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
-app.use(express.static('public'));
+// Улучшенное кеширование статических файлов (CSS, JS) для скорости
+app.use(express.static('public', { maxAge: 86400000, immutable: true }));
 app.use('/uploads', express.static('uploads'));
 
 // ---- Сессии ----
@@ -386,13 +387,13 @@ app.get('/api/settings', async (req, res) => {
   }
 });
 
-// ---- 11. Уведомления (ЗДЕСЬ БЫЛИ СДЕЛАНЫ ПРАВКИ false -> 0 и true -> 1) ----
+// ---- 11. Уведомления ----
 app.get('/api/notifications', async (req, res) => {
   try {
     const { data, error } = await supabase
       .from('notifications')
       .select('*')
-      .eq('is_read', 0)  // <--- ИЗМЕНЕНО: false на 0
+      .eq('is_read', 0)
       .order('created_at', { ascending: false });
     if (error) throw error;
     res.json(data);
@@ -402,7 +403,7 @@ app.get('/api/notifications', async (req, res) => {
 });
 app.post('/api/notifications/read', async (req, res) => {
   try {
-    await supabase.from('notifications').update({ is_read: 1 }).eq('is_read', 0); // <--- ИЗМЕНЕНО: true на 1, false на 0
+    await supabase.from('notifications').update({ is_read: 1 }).eq('is_read', 0);
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -727,7 +728,7 @@ app.delete('/api/orders/history', async (req, res) => {
 });
 
 // ============================================================
-// АДМИН-МАРШРУТЫ (без доп. категорий)
+// АДМИН-МАРШРУТЫ (с лимитами 250)
 // ============================================================
 
 app.put('/api/admin/settings', async (req, res) => {
@@ -768,7 +769,7 @@ app.get('/api/admin/status', (req, res) => {
   res.json({ isAdmin: !!req.session.isAdmin });
 });
 
-// ---- Админ: товары ----
+// ---- Админ: товары (лимит 250) ----
 app.get('/api/admin/products', async (req, res) => {
   try {
     if (!isAdmin(req)) return res.status(403).json({ error: 'Доступ запрещён' });
@@ -780,7 +781,8 @@ app.get('/api/admin/products', async (req, res) => {
         brands:brand_id(name),
         volumes:volume_id(name)
       `)
-      .order('id', { ascending: false });
+      .order('id', { ascending: false })
+      .limit(250);
     if (error) throw error;
     const items = data.map(p => ({
       ...p,
@@ -1084,7 +1086,7 @@ app.delete('/api/admin/volumes/:id', async (req, res) => {
   }
 });
 
-// ---- Админ: заказы ----
+// ---- Админ: заказы (лимит 250) ----
 app.get('/api/admin/orders', async (req, res) => {
   try {
     if (!isAdmin(req)) return res.status(403).json({ error: 'Доступ запрещён' });
@@ -1094,7 +1096,8 @@ app.get('/api/admin/orders', async (req, res) => {
         *,
         users:user_id(first_name, last_name, login)
       `)
-      .order('created_at', { ascending: false });
+      .order('created_at', { ascending: false })
+      .limit(250);
     if (error) throw error;
     const items = data.map(o => ({
       ...o,
@@ -1135,14 +1138,15 @@ app.put('/api/admin/orders/:id', async (req, res) => {
   }
 });
 
-// ---- Админ: пользователи ----
+// ---- Админ: пользователи (лимит 250) ----
 app.get('/api/admin/users', async (req, res) => {
   try {
     if (!isAdmin(req)) return res.status(403).json({ error: 'Доступ запрещён' });
     const { data, error } = await supabase
       .from('users')
       .select('id, first_name, last_name, login, is_blocked, created_at, phone')
-      .order('id', { ascending: false });
+      .order('id', { ascending: false })
+      .limit(250);
     if (error) throw error;
     res.json(data);
   } catch (err) {
@@ -1176,11 +1180,11 @@ app.delete('/api/admin/users/:id', async (req, res) => {
   }
 });
 
-// ---- Админ: новости ----
+// ---- Админ: новости (лимит 250) ----
 app.get('/api/admin/news', async (req, res) => {
   try {
     if (!isAdmin(req)) return res.status(403).json({ error: 'Доступ запрещён' });
-    const { data, error } = await supabase.from('news').select('*').order('created_at', { ascending: false });
+    const { data, error } = await supabase.from('news').select('*').order('created_at', { ascending: false }).limit(250);
     if (error) throw error;
     res.json(data);
   } catch (err) {

@@ -522,7 +522,7 @@ function loadVolumesFilter(brandId, selectedVolumeId = null) {
     });
 }
 
-// ---- Универсальный рендер товаров (с lazy loading) ----
+// ---- Универсальный рендер товаров (с lazy loading + оптимизация Supabase) ----
 function renderProducts() {
   if (!productsGrid) return;
   if (!products.length) {
@@ -536,9 +536,14 @@ function renderProducts() {
     if (hasWholesale) {
       priceHtml += ` <span class="price-separator">/</span> <span class="wholesale-price">${p.wholesale_price} ₽</span>`;
     }
+    // Добавляем сжатие через Supabase (width=400, quality=80)
+    const imageSrc = p.image 
+      ? (p.image.includes('supabase.co') ? p.image + '?width=400&quality=80' : p.image) 
+      : 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="100" height="100"%3E%3Crect width="100" height="100" fill="%23f0f2f5"/%3E%3Ctext x="50" y="55" text-anchor="middle" font-size="40" dy=".35em"%3E🥤%3C/text%3E%3C/svg%3E';
+    
     return `
     <div class="product-card" data-id="${p.id}">
-      <img class="product-img" src="${p.image || 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="100" height="100"%3E%3Crect width="100" height="100" fill="%23f0f2f5"/%3E%3Ctext x="50" y="55" text-anchor="middle" font-size="40" dy=".35em"%3E🥤%3C/text%3E%3C/svg%3E'}" alt="${p.name} ${p.brand_name ? ' - ' + p.brand_name : ''}" loading="lazy">
+      <img class="product-img" src="${imageSrc}" alt="${p.name} ${p.brand_name ? ' - ' + p.brand_name : ''}" loading="lazy">
       <div class="product-info">
         <div class="name">${p.name}</div>
         <div class="price-block">${priceHtml}</div>
@@ -662,9 +667,12 @@ function renderFavoritesProducts(favProducts) {
     if (hasWholesale) {
       priceHtml += ` <span class="price-separator">/</span> <span class="wholesale-price">${p.wholesale_price} ₽</span>`;
     }
+    const imageSrc = p.image 
+      ? (p.image.includes('supabase.co') ? p.image + '?width=400&quality=80' : p.image) 
+      : 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="100" height="100"%3E%3Crect width="100" height="100" fill="%23f0f2f5"/%3E%3Ctext x="50" y="55" text-anchor="middle" font-size="40" dy=".35em"%3E🥤%3C/text%3E%3C/svg%3E';
     return `
     <div class="product-card" data-id="${p.id}">
-      <img class="product-img" src="${p.image || 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="100" height="100"%3E%3Crect width="100" height="100" fill="%23f0f2f5"/%3E%3Ctext x="50" y="55" text-anchor="middle" font-size="40" dy=".35em"%3E🥤%3C/text%3E%3C/svg%3E'}" alt="${p.name} ${p.brand_name ? ' - ' + p.brand_name : ''}" loading="lazy">
+      <img class="product-img" src="${imageSrc}" alt="${p.name} ${p.brand_name ? ' - ' + p.brand_name : ''}" loading="lazy">
       <div class="product-info">
         <div class="name">${p.name}</div>
         <div class="price-block">${priceHtml}</div>
