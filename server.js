@@ -24,7 +24,6 @@ const supabase = createClient(supabaseUrl, supabaseKey);
 app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
-// Улучшенное кеширование статических файлов (CSS, JS) для скорости
 app.use(express.static('public', { maxAge: 86400000, immutable: true }));
 app.use('/uploads', express.static('uploads'));
 
@@ -36,11 +35,11 @@ app.use(session({
   cookie: { maxAge: 1000 * 60 * 60 * 24 }
 }));
 
-// ---- Multer ----
+// ---- Multer (УМЕНЬШИЛИ ЛИМИТ ДО 1МБ) ----
 const storage = multer.memoryStorage();
 const upload = multer({
   storage,
-  limits: { fileSize: 5 * 1024 * 1024 }
+  limits: { fileSize: 1 * 1024 * 1024 } // <--- Изменено с 5МБ на 1МБ для ускорения
 });
 
 // ---- Вспомогательная функция для загрузки в Storage ----
@@ -796,6 +795,7 @@ app.get('/api/admin/products', async (req, res) => {
   }
 });
 
+// ---- Админ: добавление товара (СДЕЛАНА ПРАВКА: уменьшен лимит и убрано await из уведомлений) ----
 app.post('/api/admin/products', upload.single('image'), async (req, res) => {
   try {
     if (!isAdmin(req)) return res.status(403).json({ error: 'Доступ запрещён' });
@@ -824,8 +824,12 @@ app.post('/api/admin/products', upload.single('image'), async (req, res) => {
       })
       .select('id');
     if (error) throw error;
-    await supabase.from('notifications').insert({ message: 'Добавлен новый товар: ' + name });
-    res.json({ id: data[0].id });
+    
+    // Отправляем уведомление в фоне, не ждём его (убрано await)
+    supabase.from('notifications').insert({ message: 'Добавлен новый товар: ' + name })
+      .catch(err => console.error('Ошибка отправки уведомления:', err));
+
+    res.json({ id: data[0].id }); // Ответ админке приходит мгновенно!
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
