@@ -35,11 +35,11 @@ app.use(session({
   cookie: { maxAge: 1000 * 60 * 60 * 24 }
 }));
 
-// ---- Multer (УМЕНЬШИЛИ ЛИМИТ ДО 1МБ) ----
+// ---- Multer ----
 const storage = multer.memoryStorage();
 const upload = multer({
   storage,
-  limits: { fileSize: 1 * 1024 * 1024 } // <--- Изменено с 5МБ на 1МБ для ускорения
+  limits: { fileSize: 1 * 1024 * 1024 } 
 });
 
 // ---- Вспомогательная функция для загрузки в Storage ----
@@ -768,7 +768,7 @@ app.get('/api/admin/status', (req, res) => {
   res.json({ isAdmin: !!req.session.isAdmin });
 });
 
-// ---- Админ: товары (лимит 250) ----
+// ---- Админ: товары ----
 app.get('/api/admin/products', async (req, res) => {
   try {
     if (!isAdmin(req)) return res.status(403).json({ error: 'Доступ запрещён' });
@@ -795,7 +795,7 @@ app.get('/api/admin/products', async (req, res) => {
   }
 });
 
-// ---- Админ: добавление товара (СДЕЛАНА ПРАВКА: уменьшен лимит и убрано await из уведомлений) ----
+// ---- Админ: добавление товара (СДЕЛАНА ПРАВКА: добавлены детальные логи) ----
 app.post('/api/admin/products', upload.single('image'), async (req, res) => {
   try {
     if (!isAdmin(req)) return res.status(403).json({ error: 'Доступ запрещён' });
@@ -808,8 +808,12 @@ app.post('/api/admin/products', upload.single('image'), async (req, res) => {
       image = imageUrl.trim();
     }
     if (!name || !price || !category_id || !brand_id || !volume_id) {
+      console.warn('⚠️ Ошибка валидации: не заполнены обязательные поля!');
       return res.status(400).json({ error: 'Заполните все поля (название, цена, категория, бренд, объём)' });
     }
+    
+    console.log('📦 Попытка добавить товар в базу:', { name, price, category_id, brand_id, volume_id });
+    
     const { data, error } = await supabase
       .from('products')
       .insert({
@@ -823,14 +827,21 @@ app.post('/api/admin/products', upload.single('image'), async (req, res) => {
         wholesale_price: wholesale_price ? parseFloat(wholesale_price) : null,
       })
       .select('id');
-    if (error) throw error;
     
-    // Отправляем уведомление в фоне, не ждём его (убрано await)
+    if (error) {
+      console.error('❌ ОШИБКА ПРИ ВСТАВКЕ ТОВАРА В БАЗУ:', error);
+      throw error;
+    }
+    
+    console.log('✅ Товар успешно добавлен с ID:', data[0].id);
+    
+    // Отправляем уведомление в фоне
     supabase.from('notifications').insert({ message: 'Добавлен новый товар: ' + name })
       .catch(err => console.error('Ошибка отправки уведомления:', err));
 
-    res.json({ id: data[0].id }); // Ответ админке приходит мгновенно!
+    res.json({ id: data[0].id });
   } catch (err) {
+    console.error('🔥 Фатальная ошибка при добавлении товара:', err);
     res.status(500).json({ error: err.message });
   }
 });
