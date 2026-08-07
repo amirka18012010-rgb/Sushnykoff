@@ -12,7 +12,53 @@
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🧃</text></svg>">
   <style>
     .product-container { max-width:800px; margin:40px auto; padding:20px; background:white; border-radius:24px; box-shadow:0 8px 32px rgba(0,0,0,0.05); }
-    .product-container img { max-width:300px; height:auto; display:block; margin:0 auto 20px; border-radius:12px; }
+    
+    /* ===== СТИЛИ ДЛЯ КАРУСЕЛИ (ЛИСТАНИЯ ТОВАРОВ) ===== */
+    .product-image-wrapper {
+      position: relative;
+      max-width: 300px;
+      margin: 0 auto 20px;
+    }
+    .product-image-wrapper img {
+      width: 100%;
+      height: auto;
+      display: block;
+      border-radius: 12px;
+      transition: opacity 0.2s ease;
+    }
+    .product-image-wrapper .nav-arrow {
+      position: absolute;
+      top: 50%;
+      transform: translateY(-50%);
+      background: rgba(255, 255, 255, 0.8);
+      backdrop-filter: blur(4px);
+      border: none;
+      border-radius: 50%;
+      width: 36px;
+      height: 36px;
+      font-size: 20px;
+      font-weight: 700;
+      cursor: pointer;
+      color: #1a1a2e;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+      transition: all 0.2s;
+      z-index: 10;
+    }
+    .product-image-wrapper .nav-arrow:hover {
+      background: white;
+      transform: translateY(-50%) scale(1.1);
+    }
+    .product-image-wrapper .nav-arrow.prev { left: -15px; }
+    .product-image-wrapper .nav-arrow.next { right: -15px; }
+
+    @media (max-width: 480px) {
+      .product-image-wrapper .nav-arrow.prev { left: 5px; }
+      .product-image-wrapper .nav-arrow.next { right: 5px; }
+      .product-image-wrapper .nav-arrow {
+        width: 30px; height: 30px; font-size: 16px;
+      }
+    }
+
     .product-container .name { font-size:28px; font-weight:700; color:#1a1a2e; }
     .product-container .price-block { font-size:24px; font-weight:700; margin:10px 0; }
     .product-container .price { color:#27ae60; }
@@ -33,6 +79,36 @@
     .review-item .user { font-weight:600; }
     .review-item .rating { color:#f1c40f; }
     .review-item .date { color:#7f8c8d; font-size:14px; }
+
+    /* ===== СТИЛИ ДЛЯ ВАРИАНТОВ (кнопки) ===== */
+    #variantsContainer {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin: 15px 0 20px 0;
+    }
+    .variant-btn {
+      padding: 8px 16px;
+      border: 2px solid #ecf0f1;
+      border-radius: 40px;
+      background: white;
+      font-weight: 600;
+      font-size: 14px;
+      color: #2c3e50;
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+    .variant-btn:hover:not(.active) {
+      border-color: #27ae60;
+      color: #27ae60;
+      background: #f0fdf4;
+    }
+    .variant-btn.active {
+      border-color: #27ae60;
+      background: #27ae60;
+      color: white;
+      box-shadow: 0 2px 8px rgba(39,174,96,0.3);
+    }
 
     /* Улучшенный блок похожих товаров – компактные карточки */
     #similarProductsGrid {
@@ -220,6 +296,10 @@
   <!-- Контент товара -->
   <div class="product-container" id="productContainer">
     <div id="productDetails"></div>
+    
+    <!-- Блок с вариантами -->
+    <div id="variantsContainer" style="margin:15px 0 25px 0;"></div>
+
     <div id="reviewsList"></div>
     <div class="review-form" id="reviewForm">
       <h3>Оставить отзыв</h3>
@@ -248,11 +328,11 @@
 <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
 <script src="script.js"></script>
 <script>
-  // ---- Логика товара (с выбором цены) ----
+  // ---- Логика товара ----
   const urlParams = new URLSearchParams(window.location.search);
-  const productId = urlParams.get('id');
-
+  let productId = urlParams.get('id');
   let selectedPriceType = 'retail';
+  let variantProducts = []; // Список всех вариантов для пролистывания
 
   if (!productId) {
     document.getElementById('productContainer').innerHTML = '<p>Товар не найден</p>';
@@ -260,6 +340,15 @@
     loadProduct();
     loadReviews();
   }
+
+  // ---- Обработка кнопки "Назад" в браузере (чтобы переключало товар без перезагрузки) ----
+  window.addEventListener('popstate', function(event) {
+    if (event.state && event.state.productId) {
+      productId = event.state.productId;
+      loadProduct();
+      loadReviews();
+    }
+  });
 
   function loadProduct() {
     fetch(`/api/products/${productId}`)
@@ -291,17 +380,23 @@
           ? (product.image.includes('supabase.co') ? product.image + '?width=600&quality=80' : product.image) 
           : 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="200" height="200"%3E%3Crect width="200" height="200" fill="%23f0f2f5"/%3E%3Ctext x="100" y="110" text-anchor="middle" font-size="40" dy=".35em"%3E🥤%3C/text%3E%3C/svg%3E';
 
+        // Выводим картинку, обернутую в контейнер со стрелками для листания
         const html = `
-          <img src="${imageSrc}" alt="${product.name} ${product.brand_name ? ' - ' + product.brand_name : ''}" loading="lazy">
-          <div class="name">${product.name}</div>
-          <div class="price-block">${priceHtml}</div>
+          <div class="product-image-wrapper">
+            <button class="nav-arrow prev" id="prevProductBtn">‹</button>
+            <img id="mainProductImg" src="${imageSrc}" alt="${product.name} ${product.brand_name ? ' - ' + product.brand_name : ''}" loading="lazy">
+            <button class="nav-arrow next" id="nextProductBtn">›</button>
+          </div>
+          <div class="name" id="mainProductName">${product.name}</div>
+          <div class="price-block" id="mainProductPrice">${priceHtml}</div>
           ${selectorHtml}
           <div class="rating">⭐ ${product.avg_rating ? product.avg_rating.toFixed(1) : 'Нет оценок'}</div>
-          <div class="description">${product.description || 'Описание отсутствует'}</div>
+          <div class="description" id="mainProductDesc">${product.description || 'Описание отсутствует'}</div>
           <button class="add-btn" data-id="${product.id}">➕ Добавить в корзину</button>
         `;
         document.getElementById('productDetails').innerHTML = html;
 
+        // Привязываем события к кнопкам цены
         document.querySelectorAll('.price-btn').forEach(btn => {
           btn.addEventListener('click', function() {
             document.querySelectorAll('.price-btn').forEach(b => b.classList.remove('active'));
@@ -318,12 +413,106 @@
           setTimeout(updateBreadcrumbs, 100);
         }
 
+        // Загружаем варианты и навешиваем события на стрелки
+        loadVariantsAndArrows(product.brand_id, product.id);
+
         // Загружаем похожие товары
         loadSimilarProducts(product);
       })
       .catch(err => console.error('Ошибка загрузки товара:', err));
   }
 
+  // ============================================================
+  // НОВАЯ ЛОГИКА: ЛИСТАНИЕ ВАРИАНТОВ (Груша, Тархун...)
+  // ============================================================
+  function loadVariantsAndArrows(brandId, currentId) {
+    fetch(`/api/products?brandId=${brandId}&limit=50`)
+      .then(res => res.json())
+      .then(data => {
+        let variants = data.items || [];
+        // Храним глобально, чтобы стрелки могли обращаться к списку
+        window.variantProducts = variants;
+        renderVariantButtons(variants, currentId);
+        attachArrowEvents(variants, currentId);
+      })
+      .catch(err => console.error('Ошибка загрузки вариантов:', err));
+  }
+
+  function renderVariantButtons(variants, currentId) {
+    const container = document.getElementById('variantsContainer');
+    if (!container) return;
+    // Если вариантов 1 или 0, скрываем блок
+    if (!variants || variants.length <= 1) {
+      container.style.display = 'none';
+      return;
+    }
+
+    container.style.display = 'flex';
+    container.innerHTML = variants.map(v => {
+      let label = v.volume_name ? `${v.volume_name}` : v.name;
+      if (v.name.toLowerCase().includes('газ')) label += ' 💨';
+      else if (v.name.toLowerCase().includes('б/г')) label += ' 🚱';
+      
+      const isActive = v.id === currentId ? 'active' : '';
+      return `<button class="variant-btn ${isActive}" data-id="${v.id}">${label}</button>`;
+    }).join('');
+
+    container.querySelectorAll('.variant-btn').forEach(btn => {
+      btn.addEventListener('click', function() {
+        const newId = parseInt(this.dataset.id);
+        if (newId === currentId) return;
+        switchProduct(newId);
+      });
+    });
+  }
+
+  // Функция для привязки стрелок к списку вариантов
+  function attachArrowEvents(variants, currentId) {
+    const prevBtn = document.getElementById('prevProductBtn');
+    const nextBtn = document.getElementById('nextProductBtn');
+
+    if (!prevBtn || !nextBtn || !variants || variants.length <= 1) {
+      if(prevBtn) prevBtn.style.display = 'none';
+      if(nextBtn) nextBtn.style.display = 'none';
+      return;
+    }
+
+    prevBtn.style.display = 'block';
+    nextBtn.style.display = 'block';
+
+    const findCurrentIndex = () => variants.findIndex(v => v.id === currentId);
+    
+    prevBtn.onclick = function(e) {
+      e.stopPropagation();
+      let index = findCurrentIndex();
+      if (index === -1) index = 0;
+      let newIndex = (index - 1 + variants.length) % variants.length;
+      switchProduct(variants[newIndex].id);
+    };
+
+    nextBtn.onclick = function(e) {
+      e.stopPropagation();
+      let index = findCurrentIndex();
+      if (index === -1) index = 0;
+      let newIndex = (index + 1) % variants.length;
+      switchProduct(variants[newIndex].id);
+    };
+  }
+
+  function switchProduct(newId) {
+    // Обновляем URL в строке браузера без перезагрузки страницы (для истории и кнопок Назад/Вперед)
+    const newUrl = `/product.html?id=${newId}`;
+    window.history.pushState({ productId: newId }, '', newUrl);
+
+    // Обновляем глобальный ID и перезагружаем данные
+    productId = newId;
+    loadProduct();
+    loadReviews();
+  }
+
+  // ============================================================
+  // ОТЗЫВЫ
+  // ============================================================
   function loadReviews() {
     fetch(`/api/products/${productId}/reviews`)
       .then(res => res.json())
@@ -372,7 +561,7 @@
       .catch(err => alert('Ошибка отправки: ' + err.message));
   });
 
-  // ---- Похожие товары (улучшенная версия с оптимизацией Supabase) ----
+  // ---- Похожие товары ----
   function loadSimilarProducts(product) {
     const categoryId = product.category_id;
     const brandId = product.brand_id;
