@@ -432,7 +432,7 @@
         `).join('');
         list.querySelectorAll('.edit-btn').forEach(btn => {
           btn.addEventListener('click', () => {
-            window.scrollTo({ top: 0, behavior: 'smooth' }); // <--- Прокрутка вверх
+            window.scrollTo({ top: 0, behavior: 'smooth' });
             const id = parseInt(btn.dataset.id);
             const product = products.find(p => p.id === id);
             if (product) {
@@ -486,16 +486,19 @@
     if (imageFile) formData.append('image', imageFile);
     const url = id ? `/api/admin/products/${id}` : '/api/admin/products';
     const method = id ? 'PUT' : 'POST';
+    
+    // ============ ИСПРАВЛЕННЫЙ БЛОК FETCH ============
     fetch(url, { method, body: formData })
-      .then(r => r.json())
-      .then(data => { 
-    // ... ваш код обработки успеха
-  })
-  .catch(err => {
-    alert('❌ Ошибка соединения с сервером: ' + err.message);
-  });
-        if (data.error) alert(data.error);
-        else {
+      .then(response => {
+        if (!response.ok) {
+          throw new Error(`HTTP ошибка ${response.status}`);
+        }
+        return response.json();
+      })
+      .then(data => {
+        if (data.error) {
+          alert(data.error);
+        } else {
           clearClientCache(null);
           loadProductsAdmin();
           document.getElementById('productForm').reset();
@@ -503,8 +506,13 @@
           document.getElementById('formSubmitBtn').textContent = '➕ Добавить товар';
           setTimeout(setupAllPreviews, 100);
         }
+      })
+      .catch(err => {
+        alert('❌ Ошибка соединения или сервера: ' + err.message);
+        console.error(err);
       });
-    ;
+    // ================================================
+  });
 
   // ---- Категории ----
   function loadCategoriesAdmin() {
@@ -532,7 +540,7 @@
         `).join('');
         list.querySelectorAll('.edit-btn').forEach(btn => {
           btn.addEventListener('click', () => {
-            window.scrollTo({ top: 0, behavior: 'smooth' }); // <--- Прокрутка вверх
+            window.scrollTo({ top: 0, behavior: 'smooth' });
             const id = parseInt(btn.dataset.id);
             const cat = cats.find(c => c.id === id);
             if (cat) {
@@ -592,7 +600,7 @@
       .catch(err => alert('Ошибка: ' + err.message));
   });
 
-  // ---- Бренды (ЗДЕСЬ БЫЛА СДЕЛАНА ПРАВКА, ЧТОБЫ НАЗВАНИЕ БРЕНДА БЫЛО ССЫЛКОЙ) ----
+  // ---- Бренды ----
   function loadBrandsAdmin() {
     fetch('/api/admin/brands')
       .then(r => r.json())
@@ -607,7 +615,7 @@
             <div class="item-preview">
               ${b.image ? `<img src="${b.image}" alt="${b.name}">` : '<span style="font-size:30px;">📦</span>'}
               <div class="item-info">
-                <a href="/brand.html?id=${b.id}" target="_blank" class="name" style="color:#3498db; text-decoration:underline;">${b.name}</a>
+                <span class="name">${b.name}</span>
                 <span class="meta">${b.category_name} • ${b.description ? b.description.substring(0, 40) : ''}</span>
               </div>
             </div>
@@ -619,7 +627,7 @@
         `).join('');
         list.querySelectorAll('.edit-btn').forEach(btn => {
           btn.addEventListener('click', () => {
-            window.scrollTo({ top: 0, behavior: 'smooth' }); // <--- Прокрутка вверх
+            window.scrollTo({ top: 0, behavior: 'smooth' });
             const id = parseInt(btn.dataset.id);
             const brand = brands.find(b => b.id === id);
             if (brand) {
@@ -699,7 +707,7 @@
         `).join('');
         list.querySelectorAll('.edit-btn').forEach(btn => {
           btn.addEventListener('click', () => {
-            window.scrollTo({ top: 0, behavior: 'smooth' }); // <--- Прокрутка вверх
+            window.scrollTo({ top: 0, behavior: 'smooth' });
             const id = parseInt(btn.dataset.id);
             const vol = volumes.find(v => v.id === id);
             if (vol) {
@@ -885,7 +893,7 @@
 
         list.querySelectorAll('.edit-btn').forEach(btn => {
           btn.addEventListener('click', () => {
-            window.scrollTo({ top: 0, behavior: 'smooth' }); // <--- Прокрутка вверх
+            window.scrollTo({ top: 0, behavior: 'smooth' });
             const id = parseInt(btn.dataset.id);
             const item = news.find(n => n.id === id);
             if (item) {
