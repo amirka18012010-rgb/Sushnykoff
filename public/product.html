@@ -222,7 +222,7 @@
   <!-- ХЕДЕР -->
   <header class="header">
     <a href="/" class="logo">
-      <h1> <span>Sushnykoff</span></h1>
+      <h1>🥤 <span>Sushnykoff</span></h1>
     </a>
     <div class="header-search">
       <form autocomplete="off" onsubmit="handleHeaderSearch(); return false;" style="display:flex; flex:1; gap:0; width:100%;">
@@ -375,9 +375,9 @@
           `;
         }
 
-        // Добавляем оптимизацию размера для картинки на странице товара
+        // Автоматический кроп 3:4 для главной картинки (width=600, height=800)
         const imageSrc = product.image 
-          ? (product.image.includes('supabase.co') ? product.image + '?width=600&quality=80' : product.image) 
+          ? (product.image.includes('supabase.co') ? product.image + '?width=600&height=800&resize=cover&quality=80' : product.image) 
           : 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="200" height="200"%3E%3Crect width="200" height="200" fill="%23f0f2f5"/%3E%3Ctext x="100" y="110" text-anchor="middle" font-size="40" dy=".35em"%3E🥤%3C/text%3E%3C/svg%3E';
 
         // Выводим картинку, обернутую в контейнер со стрелками для листания
@@ -423,14 +423,13 @@
   }
 
   // ============================================================
-  // НОВАЯ ЛОГИКА: ЛИСТАНИЕ ВАРИАНТОВ (Груша, Тархун...)
+  // ЛИСТАНИЕ ВАРИАНТОВ И СТРЕЛКИ
   // ============================================================
   function loadVariantsAndArrows(brandId, currentId) {
     fetch(`/api/products?brandId=${brandId}&limit=50`)
       .then(res => res.json())
       .then(data => {
         let variants = data.items || [];
-        // Храним глобально, чтобы стрелки могли обращаться к списку
         window.variantProducts = variants;
         renderVariantButtons(variants, currentId);
         attachArrowEvents(variants, currentId);
@@ -441,7 +440,6 @@
   function renderVariantButtons(variants, currentId) {
     const container = document.getElementById('variantsContainer');
     if (!container) return;
-    // Если вариантов 1 или 0, скрываем блок
     if (!variants || variants.length <= 1) {
       container.style.display = 'none';
       return;
@@ -466,7 +464,6 @@
     });
   }
 
-  // Функция для привязки стрелок к списку вариантов
   function attachArrowEvents(variants, currentId) {
     const prevBtn = document.getElementById('prevProductBtn');
     const nextBtn = document.getElementById('nextProductBtn');
@@ -500,11 +497,8 @@
   }
 
   function switchProduct(newId) {
-    // Обновляем URL в строке браузера без перезагрузки страницы (для истории и кнопок Назад/Вперед)
     const newUrl = `/product.html?id=${newId}`;
     window.history.pushState({ productId: newId }, '', newUrl);
-
-    // Обновляем глобальный ID и перезагружаем данные
     productId = newId;
     loadProduct();
     loadReviews();
@@ -565,7 +559,6 @@
   function loadSimilarProducts(product) {
     const categoryId = product.category_id;
     const brandId = product.brand_id;
-    // Показываем только 4 товара
     fetch(`/api/products?category=${categoryId}&limit=5&sort=random`)
       .then(res => res.json())
       .then(data => {
@@ -601,9 +594,9 @@
       if (hasWholesale) {
         priceHtml += ` <span class="price-separator">/</span> <span class="wholesale-price">${p.wholesale_price} ₽</span>`;
       }
-      // Добавляем сжатие через Supabase
+      // Автоматический кроп 3:4 (width=400, height=533) и сжатие
       const imageSrc = p.image 
-        ? (p.image.includes('supabase.co') ? p.image + '?width=400&quality=80' : p.image) 
+        ? (p.image.includes('supabase.co') ? p.image + '?width=400&height=533&resize=cover&quality=80' : p.image) 
         : 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="100" height="100"%3E%3Crect width="100" height="100" fill="%23f0f2f5"/%3E%3Ctext x="50" y="55" text-anchor="middle" font-size="40" dy=".35em"%3E🥤%3C/text%3E%3C/svg%3E';
       
       return `
