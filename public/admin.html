@@ -55,6 +55,24 @@
       padding: 10px;
       text-align: center;
     }
+
+    /* Стили для кнопки "Очистить подбор" */
+    .clear-pick-btn {
+      grid-column: 1/-1;
+      padding: 8px 16px;
+      background: #e74c3c;
+      color: white;
+      border: none;
+      border-radius: 40px;
+      font-weight: 600;
+      cursor: pointer;
+      margin-top: 5px;
+      font-size: 14px;
+      transition: background 0.2s;
+    }
+    .clear-pick-btn:hover {
+      background: #c0392b;
+    }
   </style>
 </head>
 <body>
@@ -103,6 +121,7 @@
         </div>
         <div class="full-width"><label>Описание</label><textarea id="productDescription" rows="3"></textarea></div>
         <button type="submit" id="formSubmitBtn" style="grid-column:1/-1; padding:14px; background:#27ae60; color:white; border:none; border-radius:40px; font-weight:700; cursor:pointer;">➕ Добавить товар</button>
+        <button type="button" id="clearPickBtn" class="clear-pick-btn">🔄 Очистить подбор</button>
       </form>
       <div id="adminProductList"></div>
     </div>
@@ -211,7 +230,11 @@
 </div>
 
 <script>
-  // ===== ПОЛНЫЙ СКРИПТ АДМИНКИ (с превью и авто-скроллом) =====
+  // ===== ГЛОБАЛЬНЫЕ ПЕРЕМЕННЫЕ =====
+  let allBrands = [];
+  let allVolumes = [];
+
+  // ===== ПОЛНЫЙ СКРИПТ АДМИНКИ =====
   const loginDiv = document.getElementById('adminLogin');
   const panelDiv = document.getElementById('adminPanel');
   const loginBtn = document.getElementById('loginBtn');
@@ -362,6 +385,11 @@
           const sel = document.getElementById(id);
           if (!sel) return;
           sel.innerHTML = '';
+          // Добавляем пустую опцию для возможности "не выбрано"
+          const emptyOpt = document.createElement('option');
+          emptyOpt.value = '';
+          emptyOpt.textContent = '— Выберите —';
+          sel.appendChild(emptyOpt);
           cats.forEach(c => {
             const opt = document.createElement('option');
             opt.value = c.id;
@@ -376,8 +404,15 @@
     fetch('/api/admin/brands')
       .then(r => r.json())
       .then(brands => {
+        allBrands = brands;
+
         const sel = document.getElementById('productBrand');
         sel.innerHTML = '';
+        // Пустая опция
+        const emptyOpt = document.createElement('option');
+        emptyOpt.value = '';
+        emptyOpt.textContent = '— Выберите —';
+        sel.appendChild(emptyOpt);
         brands.forEach(b => {
           const opt = document.createElement('option');
           opt.value = b.id;
@@ -392,8 +427,15 @@
     fetch('/api/admin/volumes')
       .then(r => r.json())
       .then(volumes => {
+        allVolumes = volumes;
+
         const sel = document.getElementById('productVolume');
         sel.innerHTML = '';
+        // Пустая опция
+        const emptyOpt = document.createElement('option');
+        emptyOpt.value = '';
+        emptyOpt.textContent = '— Выберите —';
+        sel.appendChild(emptyOpt);
         volumes.forEach(v => {
           const opt = document.createElement('option');
           opt.value = v.id;
@@ -403,6 +445,99 @@
       })
       .catch(err => console.error('Ошибка загрузки объёмов:', err));
   }
+
+  // ===== ФУНКЦИИ АВТОПОДБОРА =====
+
+  // Парсинг числа из строки (например, "0.5л" -> 0.5)
+  function parseVolumeNumber(str) {
+    const match = str.match(/(\d+\.?\d*)/);
+    return match ? parseFloat(match[1]) : null;
+  }
+
+  // Подбор ближайшего объёма
+  function findClosestVolume(inputNumber) {
+    if (!allVolumes.length || inputNumber === null) return null;
+    let bestId = null;
+    let bestDiff = Infinity;
+    allVolumes.forEach(v => {
+      const volNum = parseVolumeNumber(v.name);
+      if (volNum !== null) {
+        const diff = Math.abs(volNum - inputNumber);
+        if (diff < bestDiff) {
+          bestDiff = diff;
+          bestId = v.id;
+        }
+      }
+    });
+    return bestId;
+  }
+
+  // Обработка автоподбора при вводе названия
+  document.getElementById('productName').addEventListener('input', function() {
+    const searchValue = this.value.trim();
+    const brandSelect = document.getElementById('productBrand');
+    const categorySelect = document.getElementById('productCategory');
+    const volumeSelect = document.getElementById('productVolume');
+
+    // Подбор бренда
+    if (searchValue.length > 0 && allBrands.length > 0) {
+      const words = searchValue.toLowerCase().split(/\s+/).filter(w => w.length > 2);
+      let bestBrandId = null;
+      let bestScore = 0;
+      allBrands.forEach(b => {
+        const brandName = b.name.toLowerCase();
+        let score = 0;
+        if (brandName === searchValue.toLowerCase()) score = 1000;
+        else if (brandName.startsWith(searchValue.toLowerCase())) score = 500;
+        else if (brandName.includes(searchValue.toLowerCase())) score = 100;
+        else {
+          for (const word of words) {
+            if (brandName.includes(word)) score += 20;
+          }
+        }
+        if (score > bestScore) {
+          bestScore = score;
+          bestBrandId = b.id;
+        }
+      });
+      if (bestBrandId !== null && bestScore > 0) {
+        brandSelect.value = bestBrandId;
+        // Автоматически подбираем категорию по выбранному бренду
+        const selectedBrand = allBrands.find(b => b.id === bestBrandId);
+        if (selectedBrand && selectedBrand.category_id) {
+          categorySelect.value = selectedBrand.category_id;
+        }
+      }
+    }
+
+    // Подбор объёма
+    const volNumber = parseVolumeNumber(searchValue);
+    if (volNumber !== null && allVolumes.length > 0) {
+      const closestVolId = findClosestVolume(volNumber);
+      if (closestVolId !== null) {
+        volumeSelect.value = closestVolId;
+      }
+    }
+  });
+
+  // При ручном выборе бренда также обновляем категорию
+  document.getElementById('productBrand').addEventListener('change', function() {
+    const brandId = parseInt(this.value);
+    const categorySelect = document.getElementById('productCategory');
+    if (brandId && allBrands.length) {
+      const brand = allBrands.find(b => b.id === brandId);
+      if (brand && brand.category_id) {
+        categorySelect.value = brand.category_id;
+      }
+    }
+  });
+
+  // Кнопка очистки подбора (чтобы можно было выбрать вручную)
+  document.getElementById('clearPickBtn').addEventListener('click', function() {
+    document.getElementById('productBrand').value = '';
+    document.getElementById('productCategory').value = '';
+    document.getElementById('productVolume').value = '';
+  });
 
   // ---- Товары ----
   function loadProductsAdmin() {
@@ -487,7 +622,6 @@
     const url = id ? `/api/admin/products/${id}` : '/api/admin/products';
     const method = id ? 'PUT' : 'POST';
     
-    // ============ ИСПРАВЛЕННЫЙ БЛОК FETCH ============
     fetch(url, { method, body: formData })
       .then(response => {
         if (!response.ok) {
@@ -511,7 +645,6 @@
         alert('❌ Ошибка соединения или сервера: ' + err.message);
         console.error(err);
       });
-    // ================================================
   });
 
   // ---- Категории ----
