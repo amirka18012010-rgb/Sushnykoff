@@ -7,12 +7,11 @@ const path = require('path');
 const fs = require('fs');
 const bcrypt = require('bcrypt');
 const { createClient } = require('@supabase/supabase-js');
-const sharp = require('sharp');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// ---- Подключение к Supabase ----
+// ---- Supabase ----
 const supabaseUrl = process.env.SUPABASE_URL;
 const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 if (!supabaseUrl || !supabaseKey) {
@@ -38,12 +37,8 @@ app.use(session({
 
 // ---- Multer (временный диск, лимит 2МБ) ----
 const storage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    cb(null, '/tmp');
-  },
-  filename: (req, file, cb) => {
-    cb(null, `${Date.now()}-${Math.random().toString(36).substring(2, 15)}${path.extname(file.originalname)}`);
-  }
+  destination: (req, file, cb) => cb(null, '/tmp'),
+  filename: (req, file, cb) => cb(null, `${Date.now()}-${Math.random().toString(36).substring(2, 15)}${path.extname(file.originalname)}`)
 });
 
 const upload = multer({
@@ -54,53 +49,43 @@ const upload = multer({
 // ---- Обработка ошибок Multer ----
 app.use((err, req, res, next) => {
   if (err instanceof multer.MulterError) {
-    if (err.code === 'LIMIT_FILE_SIZE') {
-      return res.status(400).json({ error: 'Файл слишком большой! Максимальный размер 2 МБ.' });
-    }
+    if (err.code === 'LIMIT_FILE_SIZE') return res.status(400).json({ error: 'Файл слишком большой! Максимальный размер 2 МБ.' });
     return res.status(400).json({ error: err.message });
   }
   next(err);
 });
 
-// ---- Сжатие через Sharp (С ДОБАВЛЕННЫМ limitInputPixels) ----
+// ---- Загрузка в Storage (БЕЗ SHARP) ----
 async function uploadToStorage(file, folder) {
   if (!file) return null;
   try {
-    const fileExt = 'webp';
-    const fileName = `${folder}/${Date.now()}-${Math.random().toString(36).substring(2, 15)}.${fileExt}`;
-    const outputPath = `/tmp/${fileName.replace(/\//g, '_')}`;
+    const fileExt = path.extname(file.originalname);
+    const fileName = `${folder}/${Date.now()}-${Math.random().toString(36).substring(2, 15)}${fileExt}`;
 
-    // Сжимаем и сохраняем сразу на диск. Защита от огромных разрешений.
-    await sharp(file.path)
-      .limitInputPixels(4000000) // Не обрабатываем картинки больше 4 мегапикселей (2000x2000)
-      .resize(800, null, { withoutEnlargement: true })
-      .webp({ quality: 80 })
-      .toFile(outputPath);
+    console.log('📸 Загружаем файл:', file.path);
 
-    const fileBuffer = fs.readFileSync(outputPath);
+    // Просто читаем оригинальный файл с диска
+    const fileBuffer = fs.readFileSync(file.path);
 
+    // Удаляем временный файл с диска
     if (fs.existsSync(file.path)) fs.unlinkSync(file.path);
-    if (fs.existsSync(outputPath)) fs.unlinkSync(outputPath);
     
     const { data, error } = await supabase.storage
       .from('images')
       .upload(fileName, fileBuffer, {
-        contentType: 'image/webp',
+        contentType: file.mimetype,
         cacheControl: '3600',
         upsert: false
       });
     if (error) {
-      console.error('Ошибка загрузки в Storage:', error);
+      console.error('❌ Ошибка загрузки в Storage:', error);
       return null;
     }
-    const { data: publicUrlData } = supabase.storage
-      .from('images')
-      .getPublicUrl(fileName);
+    const { data: publicUrlData } = supabase.storage.from('images').getPublicUrl(fileName);
     return publicUrlData.publicUrl;
   } catch (err) {
-    console.error('Ошибка при обработке изображения:', err);
+    console.error('🔥 ОШИБКА ПРИ ЗАГРУЗКЕ ФАЙЛА:', err);
     if (file.path && fs.existsSync(file.path)) fs.unlinkSync(file.path);
-    if (fs.existsSync(outputPath)) fs.unlinkSync(outputPath);
     return null;
   }
 }
@@ -114,7 +99,7 @@ async function isBlocked(userId) {
   return data.is_blocked;
 }
 
-// ---- Функции для корзины ----
+// ---- Корзина ----
 async function getCartFromDB(userId) {
   const { data, error } = await supabase.from('cart_items').select('product_id, quantity, price_type, price').eq('user_id', userId);
   if (error) return [];
@@ -130,52 +115,15 @@ async function setCartToDB(userId, cart) {
 // ============================================================
 // ПУБЛИЧНЫЕ МАРШРУТЫ
 // ============================================================
-
 app.get('/api/ping', (req, res) => res.send('ok'));
-
-app.get('/api/categories', async (req, res) => {
-  try { const { data, error } = await supabase.from('categories').select('*').order('name'); if (error) throw error; res.json(data); } catch (err) { res.status(500).json({ error: err.message }); }
-});
-app.get('/api/brands', async (req, res) => {
-  try { const { categoryId } = req.query; let query = supabase.from('brands').select('*'); if (categoryId) query = query.eq('category_id', categoryId); const { data, error } = await query.order('name'); if (error) throw error; res.json(data); } catch (err) { res.status(500).json({ error: err.message }); }
-});
-app.get('/api/brands/:id', async (req, res) => {
-  try { const { data, error } = await supabase.from('brands').select('*').eq('id', req.params.id).single(); if (error) return res.status(404).json({ error: 'Бренд не найден' }); res.json(data); } catch (err) { res.status(500).json({ error: err.message }); }
-});
-app.get('/api/volumes', async (req, res) => {
-  try { const { brandId } = req.query; if (!brandId) return res.json([]); const { data, error } = await supabase.from('products').select('volume_id').eq('brand_id', brandId); if (error) throw error; const volumeIds = data.map(p => p.volume_id).filter(id => id !== null); if (!volumeIds.length) return res.json([]); const { data: volumes, error: err2 } = await supabase.from('volumes').select('*').in('id', volumeIds).order('sort_order', { ascending: true }); if (err2) throw err2; res.json(volumes); } catch (err) { res.status(500).json({ error: err.message }); }
-});
-app.get('/api/products', async (req, res) => {
-  try {
-    const { brandId, volumeId, category, search, page = 1, limit = 12, sort = 'newest', ids } = req.query;
-    let query = supabase.from('products').select(`*, categories:category_id(name), brands:brand_id(name), volumes:volume_id(name)`);
-    if (brandId) query = query.eq('brand_id', brandId);
-    if (volumeId) query = query.eq('volume_id', volumeId);
-    if (category && category !== 'all') query = query.eq('category_id', category);
-    if (search && search.trim() !== '') { const words = search.trim().split(/\s+/).filter(w => w.length > 0); const conditions = words.map(word => `name.ilike.%${word}%,description.ilike.%${word}%`).join(','); query = query.or(conditions); }
-    if (ids) { const idArray = ids.split(',').map(Number).filter(id => !isNaN(id)); if (idArray.length) query = query.in('id', idArray); }
-    query = query.order('id', { ascending: false });
-    const from = (page - 1) * limit; const to = from + limit - 1; query = query.range(from, to);
-    const { data, error } = await query; if (error) throw error;
-    const items = data.map(p => ({ ...p, category_name: p.categories?.name, brand_name: p.brands?.name, volume_name: p.volumes?.name }));
-    let countQuery = supabase.from('products').select('*', { count: 'exact', head: true });
-    if (brandId) countQuery = countQuery.eq('brand_id', brandId);
-    if (volumeId) countQuery = countQuery.eq('volume_id', volumeId);
-    if (category && category !== 'all') countQuery = countQuery.eq('category_id', category);
-    if (search && search.trim() !== '') { const words = search.trim().split(/\s+/).filter(w => w.length > 0); const conditions = words.map(word => `name.ilike.%${word}%,description.ilike.%${word}%`).join(','); countQuery = countQuery.or(conditions); }
-    const { count, error: countErr } = await countQuery; if (countErr) throw countErr;
-    res.json({ items, total: count || 0, page: parseInt(page), totalPages: Math.ceil((count || 0) / limit) });
-  } catch (err) { res.status(500).json({ error: err.message }); }
-});
-app.get('/api/products/:id', async (req, res) => {
-  try { const { data, error } = await supabase.from('products').select(`*, categories:category_id(name), brands:brand_id(name), volumes:volume_id(name)`).eq('id', req.params.id).single(); if (error) return res.status(404).json({ error: 'Товар не найден' }); data.category_name = data.categories?.name; data.brand_name = data.brands?.name; data.volume_name = data.volumes?.name; res.json(data); } catch (err) { res.status(500).json({ error: err.message }); }
-});
-app.get('/api/products/:id/reviews', async (req, res) => {
-  try { const { data, error } = await supabase.from('reviews').select('*').eq('product_id', req.params.id).order('created_at', { ascending: false }); if (error) throw error; res.json(data); } catch (err) { res.status(500).json({ error: err.message }); }
-});
-app.post('/api/products/:id/reviews', async (req, res) => {
-  try { const { user_name, rating, comment } = req.body; if (!user_name || !rating || rating < 1 || rating > 5) return res.status(400).json({ error: 'Заполните имя и рейтинг' }); const { data, error } = await supabase.from('reviews').insert({ product_id: req.params.id, user_name, rating, comment: comment || '' }).select(); if (error) throw error; const { data: avgData } = await supabase.from('reviews').select('rating').eq('product_id', req.params.id); if (avgData && avgData.length) { const avg = avgData.reduce((sum, r) => sum + r.rating, 0) / avgData.length; await supabase.from('products').update({ avg_rating: avg }).eq('id', req.params.id); } res.json({ id: data[0].id }); } catch (err) { res.status(500).json({ error: err.message }); }
-});
+app.get('/api/categories', async (req, res) => { try { const { data, error } = await supabase.from('categories').select('*').order('name'); if (error) throw error; res.json(data); } catch (err) { res.status(500).json({ error: err.message }); } });
+app.get('/api/brands', async (req, res) => { try { const { categoryId } = req.query; let query = supabase.from('brands').select('*'); if (categoryId) query = query.eq('category_id', categoryId); const { data, error } = await query.order('name'); if (error) throw error; res.json(data); } catch (err) { res.status(500).json({ error: err.message }); } });
+app.get('/api/brands/:id', async (req, res) => { try { const { data, error } = await supabase.from('brands').select('*').eq('id', req.params.id).single(); if (error) return res.status(404).json({ error: 'Бренд не найден' }); res.json(data); } catch (err) { res.status(500).json({ error: err.message }); } });
+app.get('/api/volumes', async (req, res) => { try { const { brandId } = req.query; if (!brandId) return res.json([]); const { data, error } = await supabase.from('products').select('volume_id').eq('brand_id', brandId); if (error) throw error; const volumeIds = data.map(p => p.volume_id).filter(id => id !== null); if (!volumeIds.length) return res.json([]); const { data: volumes, error: err2 } = await supabase.from('volumes').select('*').in('id', volumeIds).order('sort_order', { ascending: true }); if (err2) throw err2; res.json(volumes); } catch (err) { res.status(500).json({ error: err.message }); } });
+app.get('/api/products', async (req, res) => { try { const { brandId, volumeId, category, search, page = 1, limit = 12, sort = 'newest', ids } = req.query; let query = supabase.from('products').select(`*, categories:category_id(name), brands:brand_id(name), volumes:volume_id(name)`); if (brandId) query = query.eq('brand_id', brandId); if (volumeId) query = query.eq('volume_id', volumeId); if (category && category !== 'all') query = query.eq('category_id', category); if (search && search.trim() !== '') { const words = search.trim().split(/\s+/).filter(w => w.length > 0); const conditions = words.map(word => `name.ilike.%${word}%,description.ilike.%${word}%`).join(','); query = query.or(conditions); } if (ids) { const idArray = ids.split(',').map(Number).filter(id => !isNaN(id)); if (idArray.length) query = query.in('id', idArray); } query = query.order('id', { ascending: false }); const from = (page - 1) * limit; const to = from + limit - 1; query = query.range(from, to); const { data, error } = await query; if (error) throw error; const items = data.map(p => ({ ...p, category_name: p.categories?.name, brand_name: p.brands?.name, volume_name: p.volumes?.name })); let countQuery = supabase.from('products').select('*', { count: 'exact', head: true }); if (brandId) countQuery = countQuery.eq('brand_id', brandId); if (volumeId) countQuery = countQuery.eq('volume_id', volumeId); if (category && category !== 'all') countQuery = countQuery.eq('category_id', category); if (search && search.trim() !== '') { const words = search.trim().split(/\s+/).filter(w => w.length > 0); const conditions = words.map(word => `name.ilike.%${word}%,description.ilike.%${word}%`).join(','); countQuery = countQuery.or(conditions); } const { count, error: countErr } = await countQuery; if (countErr) throw countErr; res.json({ items, total: count || 0, page: parseInt(page), totalPages: Math.ceil((count || 0) / limit) }); } catch (err) { res.status(500).json({ error: err.message }); } });
+app.get('/api/products/:id', async (req, res) => { try { const { data, error } = await supabase.from('products').select(`*, categories:category_id(name), brands:brand_id(name), volumes:volume_id(name)`).eq('id', req.params.id).single(); if (error) return res.status(404).json({ error: 'Товар не найден' }); data.category_name = data.categories?.name; data.brand_name = data.brands?.name; data.volume_name = data.volumes?.name; res.json(data); } catch (err) { res.status(500).json({ error: err.message }); } });
+app.get('/api/products/:id/reviews', async (req, res) => { try { const { data, error } = await supabase.from('reviews').select('*').eq('product_id', req.params.id).order('created_at', { ascending: false }); if (error) throw error; res.json(data); } catch (err) { res.status(500).json({ error: err.message }); } });
+app.post('/api/products/:id/reviews', async (req, res) => { try { const { user_name, rating, comment } = req.body; if (!user_name || !rating || rating < 1 || rating > 5) return res.status(400).json({ error: 'Заполните имя и рейтинг' }); const { data, error } = await supabase.from('reviews').insert({ product_id: req.params.id, user_name, rating, comment: comment || '' }).select(); if (error) throw error; const { data: avgData } = await supabase.from('reviews').select('rating').eq('product_id', req.params.id); if (avgData && avgData.length) { const avg = avgData.reduce((sum, r) => sum + r.rating, 0) / avgData.length; await supabase.from('products').update({ avg_rating: avg }).eq('id', req.params.id); } res.json({ id: data[0].id }); } catch (err) { res.status(500).json({ error: err.message }); } });
 app.get('/api/favorites', async (req, res) => { if (!isAuthenticated(req)) return res.status(401).json({ error: 'Необходимо войти' }); try { const { data, error } = await supabase.from('favorites').select('product_id').eq('user_id', req.session.userId); if (error) throw error; res.json(data.map(r => r.product_id)); } catch (err) { res.status(500).json({ error: err.message }); } });
 app.post('/api/favorites', async (req, res) => { if (!isAuthenticated(req)) return res.status(401).json({ error: 'Необходимо войти' }); const { productId } = req.body; if (!productId) return res.status(400).json({ error: 'Не указан товар' }); try { await supabase.from('favorites').insert({ user_id: req.session.userId, product_id: productId }); res.json({ success: true }); } catch (err) { res.status(500).json({ error: err.message }); } });
 app.delete('/api/favorites/:productId', async (req, res) => { if (!isAuthenticated(req)) return res.status(401).json({ error: 'Необходимо войти' }); try { await supabase.from('favorites').delete().eq('user_id', req.session.userId).eq('product_id', req.params.productId); res.json({ success: true }); } catch (err) { res.status(500).json({ error: err.message }); } });
@@ -186,24 +134,19 @@ app.post('/api/notifications/read', async (req, res) => { try { await supabase.f
 app.get('/api/background', async (req, res) => { try { const { data, error } = await supabase.from('settings').select('value').eq('key', 'site_background').single(); if (error) return res.json({ background: '' }); res.json({ background: data.value || '' }); } catch (err) { res.status(500).json({ error: err.message }); } });
 
 // ---- Аутентификация ----
-app.post('/api/auth/register', async (req, res) => {
-  try { const { firstName, lastName, login, password, phone } = req.body; if (!firstName || !lastName || !login || !password) return res.status(400).json({ error: 'Заполните все обязательные поля' }); const { data: existing } = await supabase.from('users').select('id').eq('login', login).single(); if (existing) return res.status(400).json({ error: 'Логин уже занят' }); const hashed = await bcrypt.hash(password, 10); const { data, error } = await supabase.from('users').insert({ first_name: firstName, last_name: lastName, login, password: hashed, phone: phone || null }).select('id'); if (error) throw error; req.session.userId = data[0].id; res.json({ success: true, userId: data[0].id }); } catch (err) { res.status(500).json({ error: 'Ошибка регистрации' }); }
-});
-app.post('/api/auth/login', async (req, res) => {
-  try { const { login, password } = req.body; if (!login || !password) return res.status(400).json({ error: 'Введите логин и пароль' }); const { data: user, error } = await supabase.from('users').select('*').eq('login', login).single(); if (error || !user) return res.status(401).json({ error: 'Неверный логин или пароль' }); if (user.is_blocked) return res.status(403).json({ error: 'Ваш аккаунт заблокирован' }); const match = await bcrypt.compare(password, user.password); if (!match) return res.status(401).json({ error: 'Неверный логин или пароль' }); req.session.userId = user.id; res.json({ success: true, userId: user.id, firstName: user.first_name, lastName: user.last_name }); } catch (err) { res.status(500).json({ error: 'Ошибка входа' }); }
-});
+app.post('/api/auth/register', async (req, res) => { try { const { firstName, lastName, login, password, phone } = req.body; if (!firstName || !lastName || !login || !password) return res.status(400).json({ error: 'Заполните все обязательные поля' }); const { data: existing } = await supabase.from('users').select('id').eq('login', login).single(); if (existing) return res.status(400).json({ error: 'Логин уже занят' }); const hashed = await bcrypt.hash(password, 10); const { data, error } = await supabase.from('users').insert({ first_name: firstName, last_name: lastName, login, password: hashed, phone: phone || null }).select('id'); if (error) throw error; req.session.userId = data[0].id; res.json({ success: true, userId: data[0].id }); } catch (err) { res.status(500).json({ error: 'Ошибка регистрации' }); } });
+app.post('/api/auth/login', async (req, res) => { try { const { login, password } = req.body; if (!login || !password) return res.status(400).json({ error: 'Введите логин и пароль' }); const { data: user, error } = await supabase.from('users').select('*').eq('login', login).single(); if (error || !user) return res.status(401).json({ error: 'Неверный логин или пароль' }); if (user.is_blocked) return res.status(403).json({ error: 'Ваш аккаунт заблокирован' }); const match = await bcrypt.compare(password, user.password); if (!match) return res.status(401).json({ error: 'Неверный логин или пароль' }); req.session.userId = user.id; res.json({ success: true, userId: user.id, firstName: user.first_name, lastName: user.last_name }); } catch (err) { res.status(500).json({ error: 'Ошибка входа' }); } });
 app.get('/api/auth/me', async (req, res) => { try { if (!isAuthenticated(req)) return res.json({ user: null }); const { data, error } = await supabase.from('users').select('id, first_name, last_name, login').eq('id', req.session.userId).single(); if (error || !data) { req.session.destroy(); return res.json({ user: null }); } res.json({ user: data }); } catch (err) { res.status(500).json({ error: err.message }); } });
 app.post('/api/auth/logout', (req, res) => { req.session.destroy(); res.json({ success: true }); });
 app.post('/api/auth/recover-login', async (req, res) => { try { const { firstName, lastName } = req.body; if (!firstName || !lastName) return res.status(400).json({ error: 'Введите имя и фамилию' }); const { data, error } = await supabase.from('users').select('login').eq('first_name', firstName).eq('last_name', lastName).single(); if (error || !data) return res.status(404).json({ error: 'Пользователь не найден' }); res.json({ login: data.login }); } catch (err) { res.status(500).json({ error: err.message }); } });
 app.post('/api/auth/reset-password', async (req, res) => { try { const { firstName, lastName, login, newPassword } = req.body; if (!firstName || !lastName || !login || !newPassword) return res.status(400).json({ error: 'Заполните все поля' }); const { data, error } = await supabase.from('users').select('id').eq('first_name', firstName).eq('last_name', lastName).eq('login', login).single(); if (error || !data) return res.status(404).json({ error: 'Пользователь не найден' }); const hashed = await bcrypt.hash(newPassword, 10); await supabase.from('users').update({ password: hashed }).eq('id', data.id); res.json({ success: true }); } catch (err) { res.status(500).json({ error: err.message }); } });
 
-// ---- Корзина и Заказы ----
+// ---- Корзина ----
 app.get('/api/cart', async (req, res) => { try { if (isAuthenticated(req)) { const cart = await getCartFromDB(req.session.userId); res.json(cart); } else { res.json(req.session.cart || []); } } catch (err) { res.status(500).json({ error: err.message }); } });
 app.post('/api/cart', async (req, res) => { try { const { productId, quantity, priceType = 'retail' } = req.body; if (!productId || quantity === undefined) return res.status(400).json({ error: 'Не указан товар или количество' }); const { data: product, error } = await supabase.from('products').select('*').eq('id', productId).single(); if (error || !product) return res.status(404).json({ error: 'Товар не найден' }); let price = product.price; if (priceType === 'wholesale' && product.wholesale_price !== null && product.wholesale_price > 0) price = product.wholesale_price; if (isAuthenticated(req)) { let cart = await getCartFromDB(req.session.userId); const existingIndex = cart.findIndex(item => item.productId === productId && item.priceType === priceType); if (existingIndex !== -1) { if (quantity > 0) { cart[existingIndex].quantity = quantity; cart[existingIndex].price = price; } else cart.splice(existingIndex, 1); } else if (quantity > 0) cart.push({ productId, quantity, priceType, price }); await setCartToDB(req.session.userId, cart); res.json(cart); } else { let cart = req.session.cart || []; const existingIndex = cart.findIndex(item => item.productId === productId && item.priceType === priceType); if (existingIndex !== -1) { if (quantity > 0) { cart[existingIndex].quantity = quantity; cart[existingIndex].price = price; } else cart.splice(existingIndex, 1); } else if (quantity > 0) cart.push({ productId, quantity, priceType, price }); req.session.cart = cart; res.json(cart); } } catch (err) { res.status(500).json({ error: err.message }); } });
 app.delete('/api/cart/:productId', async (req, res) => { try { const productId = parseInt(req.params.productId); const priceType = req.query.priceType || 'retail'; if (isAuthenticated(req)) { let cart = await getCartFromDB(req.session.userId); cart = cart.filter(item => !(item.productId === productId && item.priceType === priceType)); await setCartToDB(req.session.userId, cart); res.json(cart); } else { let cart = req.session.cart || []; cart = cart.filter(item => !(item.productId === productId && item.priceType === priceType)); req.session.cart = cart; res.json(cart); } } catch (err) { res.status(500).json({ error: err.message }); } });
 app.post('/api/cart/sync', async (req, res) => { try { if (!isAuthenticated(req)) return res.status(401).json({ error: 'Необходимо войти' }); const sessionCart = req.session.cart || []; if (sessionCart.length > 0) { await setCartToDB(req.session.userId, sessionCart); req.session.cart = []; } const dbCart = await getCartFromDB(req.session.userId); res.json(dbCart); } catch (err) { res.status(500).json({ error: err.message }); } });
-app.post('/api/orders', async (req, res) => {
-  try { if (!isAuthenticated(req)) return res.status(401).json({ error: 'Необходимо войти' }); if (await isBlocked(req.session.userId)) return res.status(403).json({ error: 'Ваш аккаунт заблокирован' }); let cart = await getCartFromDB(req.session.userId); if (cart.length === 0) cart = req.session.cart || []; if (cart.length === 0) return res.status(400).json({ error: 'Корзина пуста' }); let total = 0; const orderItems = []; for (const item of cart) { const { data: product, error } = await supabase.from('products').select('*').eq('id', item.productId).single(); if (error || !product) return res.status(404).json({ error: `Товар ${item.productId} не найден` }); const price = item.price || product.price; total += price * item.quantity; orderItems.push({ productId: item.productId, name: product.name, price, quantity: item.quantity, priceType: item.priceType || 'retail' }); } const { data: order, error } = await supabase.from('orders').insert({ user_id: req.session.userId, items: JSON.stringify(orderItems), total, status: 'pending' }).select('id'); if (error) throw error; if (isAuthenticated(req)) await supabase.from('cart_items').delete().eq('user_id', req.session.userId); else req.session.cart = []; const orderId = order[0].id; const { data: user } = await supabase.from('users').select('first_name, last_name').eq('id', req.session.userId).single(); const message = `🆕 Новый заказ №${orderId} от ${user.first_name} ${user.last_name} на сумму ${total} ₽`; await supabase.from('notifications').insert({ message }); res.json({ orderId, total, message: 'Заказ создан' }); } catch (err) { res.status(500).json({ error: err.message }); }
+app.post('/api/orders', async (req, res) => { try { if (!isAuthenticated(req)) return res.status(401).json({ error: 'Необходимо войти' }); if (await isBlocked(req.session.userId)) return res.status(403).json({ error: 'Ваш аккаунт заблокирован' }); let cart = await getCartFromDB(req.session.userId); if (cart.length === 0) cart = req.session.cart || []; if (cart.length === 0) return res.status(400).json({ error: 'Корзина пуста' }); let total = 0; const orderItems = []; for (const item of cart) { const { data: product, error } = await supabase.from('products').select('*').eq('id', item.productId).single(); if (error || !product) return res.status(404).json({ error: `Товар ${item.productId} не найден` }); const price = item.price || product.price; total += price * item.quantity; orderItems.push({ productId: item.productId, name: product.name, price, quantity: item.quantity, priceType: item.priceType || 'retail' }); } const { data: order, error } = await supabase.from('orders').insert({ user_id: req.session.userId, items: JSON.stringify(orderItems), total, status: 'pending' }).select('id'); if (error) throw error; if (isAuthenticated(req)) await supabase.from('cart_items').delete().eq('user_id', req.session.userId); else req.session.cart = []; const orderId = order[0].id; const { data: user } = await supabase.from('users').select('first_name, last_name').eq('id', req.session.userId).single(); const message = `🆕 Новый заказ №${orderId} от ${user.first_name} ${user.last_name} на сумму ${total} ₽`; await supabase.from('notifications').insert({ message }); res.json({ orderId, total, message: 'Заказ создан' }); } catch (err) { res.status(500).json({ error: err.message }); }
 });
 app.get('/api/orders/history', async (req, res) => { try { if (!isAuthenticated(req)) return res.status(401).json({ error: 'Необходимо войти' }); const { data, error } = await supabase.from('orders').select('*').eq('user_id', req.session.userId).eq('is_deleted', 0).order('created_at', { ascending: false }); if (error) throw error; res.json(data); } catch (err) { res.status(500).json({ error: err.message }); } });
 app.delete('/api/orders/history', async (req, res) => { try { if (!isAuthenticated(req)) return res.status(401).json({ error: 'Необходимо войти' }); await supabase.from('orders').update({ is_deleted: 1 }).eq('user_id', req.session.userId); res.json({ success: true }); } catch (err) { res.status(500).json({ error: err.message }); } });
