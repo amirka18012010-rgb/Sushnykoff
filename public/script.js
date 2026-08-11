@@ -519,7 +519,7 @@ function loadVolumesFilter(brandId, selectedVolumeId = null) {
     });
 }
 
-// ---- Универсальный рендер товаров (с автоматическим кропом 3:4 и сжатием) ----
+// ---- Универсальный рендер товаров ----
 function renderProducts() {
   if (!productsGrid) return;
   if (!products.length) {
@@ -533,7 +533,6 @@ function renderProducts() {
     if (hasWholesale) {
       priceHtml += ` <span class="price-separator">/</span> <span class="wholesale-price">${p.wholesale_price} ₽</span>`;
     }
-    // Добавляем автоматический кроп 3:4 (width=400, height=533) и сжатие (quality=80)
     const imageSrc = p.image 
       ? (p.image.includes('supabase.co') ? p.image + '?width=400&height=533&resize=cover&quality=80' : p.image) 
       : 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="100" height="100"%3E%3Crect width="100" height="100" fill="%23f0f2f5"/%3E%3Ctext x="50" y="55" text-anchor="middle" font-size="40" dy=".35em"%3E🥤%3C/text%3E%3C/svg%3E';
@@ -580,6 +579,7 @@ function renderProducts() {
   });
 }
 
+// =============== ИСПРАВЛЕННАЯ ПАГИНАЦИЯ ===============
 function renderPagination() {
   if (!pagination) return;
   if (totalPages <= 1) { pagination.innerHTML = ''; return; }
@@ -590,7 +590,12 @@ function renderPagination() {
   pagination.innerHTML = html;
   pagination.querySelectorAll('.page-btn').forEach(btn => {
     btn.addEventListener('click', () => {
-      currentPage = parseInt(btn.dataset.page);
+      const newPage = parseInt(btn.dataset.page);
+      if (newPage === currentPage) return; // Если нажали на текущую страницу — игнорируем
+      
+      currentPage = newPage;
+      clearCache(null); // Очищаем кеш, чтобы не было залипания старых данных
+      
       if (window.location.pathname.includes('brand.html')) {
         const searchInput = document.getElementById('brandSearchInput');
         const search = searchInput ? searchInput.value.trim() : '';
@@ -608,6 +613,7 @@ function renderPagination() {
     });
   });
 }
+// ======================================================
 
 // ---- СТРАНИЦА ИЗБРАННОГО ----
 if (window.location.pathname.includes('favorites.html')) {
@@ -664,7 +670,6 @@ function renderFavoritesProducts(favProducts) {
     if (hasWholesale) {
       priceHtml += ` <span class="price-separator">/</span> <span class="wholesale-price">${p.wholesale_price} ₽</span>`;
     }
-    // Добавляем автоматический кроп 3:4 (width=400, height=533) и сжатие
     const imageSrc = p.image 
       ? (p.image.includes('supabase.co') ? p.image + '?width=400&height=533&resize=cover&quality=80' : p.image) 
       : 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="100" height="100"%3E%3Crect width="100" height="100" fill="%23f0f2f5"/%3E%3Ctext x="50" y="55" text-anchor="middle" font-size="40" dy=".35em"%3E🥤%3C/text%3E%3C/svg%3E';
